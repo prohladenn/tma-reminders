@@ -69,6 +69,7 @@ public class MainView extends VerticalLayout {
 
         binder.forField(chatId)
                 .asRequired("Chat ID is required")
+                .withNullRepresentation("")
                 .withConverter(new StringToLongConverter("Chat ID must be a number"))
                 .withValidator(id -> id > 0, "Chat ID must be positive")
                 .bind(r -> {
