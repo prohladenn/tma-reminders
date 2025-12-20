@@ -86,9 +86,7 @@ public class TelegramWebhookController {
             Reminder reminder = new Reminder();
             reminder.setChatId(chatId);
             reminder.setTitle(parts[0].trim());
-            LocalDateTime start = LocalDateTime.parse(parts[1].trim(), formatter);
-            reminder.setStartTime(start);
-            reminder.setNextFireAt(start);
+            reminder.setStartTime(LocalDateTime.parse(parts[1].trim(), formatter));
             reminder.setRecurrence(Recurrence.valueOf(parts[2].trim().toUpperCase()));
             if (parts.length == 4) {
                 reminder.setDescription(parts[3].trim());
@@ -107,17 +105,9 @@ public class TelegramWebhookController {
                     .append(": ")
                     .append(reminder.getTitle())
                     .append(" => ")
-                    .append(formatNextFireAt(reminder))
+                    .append(reminder.getStartTime().format(formatter))
                     .append(" (" + reminder.getRecurrence() + ")\n");
         }
         return sb.toString();
-    }
-
-    private String formatNextFireAt(Reminder reminder) {
-        LocalDateTime nextFireAt = reminder.getNextFireAt();
-        if (nextFireAt == null) {
-            return "-";
-        }
-        return nextFireAt.format(formatter);
     }
 }

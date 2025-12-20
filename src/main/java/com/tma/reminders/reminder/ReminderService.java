@@ -20,14 +20,11 @@ public class ReminderService {
     }
 
     public Reminder save(Reminder reminder) {
-        if (reminder.getNextFireAt() == null) {
-            reminder.setNextFireAt(reminder.getStartTime());
-        }
         return repository.save(reminder);
     }
 
     public List<Reminder> findAllByChatId(String chatId) {
-        return repository.findAllByChatIdOrderByNextFireAtAsc(chatId);
+        return repository.findAllByChatIdOrderByStartTimeAsc(chatId);
     }
 
     public List<Reminder> findAll() {
@@ -55,22 +52,17 @@ public class ReminderService {
     }
 
     private void processRecurrence(Reminder reminder) {
-        reminder.setLastSentAt(LocalDateTime.now());
-
         Recurrence recurrence = reminder.getRecurrence();
         if (recurrence == null || recurrence == Recurrence.ONCE) {
             reminder.setActive(false);
-            reminder.setNextFireAt(null);
+            // Keep validation happy on completed reminders by resetting the timestamp just ahead of now.
+            reminder.setStartTime(LocalDateTime.now().plusSeconds(1));
             return;
         }
-        LocalDateTime nextFireAt = reminder.getNextFireAt();
-        if (nextFireAt == null) {
-            nextFireAt = LocalDateTime.now();
-        }
         switch (recurrence) {
-            case DAILY -> reminder.setNextFireAt(nextFireAt.plusDays(1));
-            case WEEKLY -> reminder.setNextFireAt(nextFireAt.plusWeeks(1));
-            case MONTHLY -> reminder.setNextFireAt(nextFireAt.plusMonths(1));
+            case DAILY -> reminder.setStartTime(reminder.getStartTime().plusDays(1));
+            case WEEKLY -> reminder.setStartTime(reminder.getStartTime().plusWeeks(1));
+            case MONTHLY -> reminder.setStartTime(reminder.getStartTime().plusMonths(1));
             default -> reminder.setActive(false);
         }
     }

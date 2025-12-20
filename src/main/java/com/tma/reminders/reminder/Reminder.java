@@ -9,7 +9,6 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "reminders")
-@FutureOrPresentWhenActive
 public class Reminder {
 
     @Id
@@ -25,12 +24,8 @@ public class Reminder {
     private String description;
 
     @NotNull
-    private LocalDateTime startTime;
-
     @FutureOrPresent
-    private LocalDateTime nextFireAt;
-
-    private LocalDateTime lastSentAt;
+    private LocalDateTime startTime;
 
     @Enumerated(EnumType.STRING)
     @Column(length = 20)
@@ -92,21 +87,5 @@ public class Reminder {
 
     public void setActive(boolean active) {
         this.active = active;
-    }
-
-    public LocalDateTime getNextFireAt() {
-        return nextFireAt;
-    }
-
-    public void setNextFireAt(LocalDateTime nextFireAt) {
-        this.nextFireAt = nextFireAt;
-    }
-
-    public LocalDateTime getLastSentAt() {
-        return lastSentAt;
-    }
-
-    public void setLastSentAt(LocalDateTime lastSentAt) {
-        this.lastSentAt = lastSentAt;
     }
 }

@@ -9,8 +9,8 @@ import java.util.List;
 
 public interface ReminderRepository extends JpaRepository<Reminder, Long> {
 
-    @Query("select r from Reminder r where r.active = true and r.nextFireAt <= :now")
+    @Query("select r from Reminder r where r.active = true and r.startTime <= :now")
     List<Reminder> findDueReminders(@Param("now") LocalDateTime now);
 
-    List<Reminder> findAllByChatIdOrderByNextFireAtAsc(String chatId);
+    List<Reminder> findAllByChatIdOrderByStartTimeAsc(String chatId);
 }

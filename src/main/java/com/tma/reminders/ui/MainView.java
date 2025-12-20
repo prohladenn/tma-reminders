@@ -49,7 +49,7 @@ public class MainView extends VerticalLayout {
         grid.addColumn(Reminder::getId).setHeader("ID").setAutoWidth(true);
         grid.addColumn(Reminder::getChatId).setHeader("Chat ID").setAutoWidth(true);
         grid.addColumn(Reminder::getTitle).setHeader("Title").setAutoWidth(true);
-        grid.addColumn(Reminder::getNextFireAt).setHeader("Next run").setAutoWidth(true);
+        grid.addColumn(Reminder::getStartTime).setHeader("Next run").setAutoWidth(true);
         grid.addColumn(Reminder::getRecurrence).setHeader("Recurrence").setAutoWidth(true);
         grid.addColumn(Reminder::isActive).setHeader("Active").setAutoWidth(true);
         grid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES);
@@ -62,7 +62,7 @@ public class MainView extends VerticalLayout {
         TextField chatId = new TextField("Chat ID");
         TextField title = new TextField("Title");
         TextArea description = new TextArea("Description");
-        DateTimePicker nextRun = new DateTimePicker("Next run");
+        DateTimePicker startTime = new DateTimePicker("Start time");
         ComboBox<Recurrence> recurrence = new ComboBox<>("Recurrence");
         recurrence.setItems(Arrays.asList(Recurrence.values()));
         recurrence.setItemLabelGenerator(Enum::name);
@@ -79,14 +79,11 @@ public class MainView extends VerticalLayout {
                         (r, value) -> r.setChatId(value == null ? null : String.valueOf(value)));
         binder.forField(title).asRequired("Title is required").bind(Reminder::getTitle, Reminder::setTitle);
         binder.forField(description).bind(Reminder::getDescription, Reminder::setDescription);
-        binder.forField(nextRun)
-                .asRequired("Next run is required")
+        binder.forField(startTime)
+                .asRequired("Start time is required")
                 .withValidator(time -> time.isAfter(LocalDateTime.now()) || time.isEqual(LocalDateTime.now()),
                         "Time must be in the future")
-                .bind(Reminder::getNextFireAt, (reminder, value) -> {
-                    reminder.setNextFireAt(value);
-                    reminder.setStartTime(value);
-                });
+                .bind(Reminder::getStartTime, Reminder::setStartTime);
         binder.forField(recurrence)
                 .asRequired("Recurrence is required")
                 .bind(Reminder::getRecurrence, Reminder::setRecurrence);
@@ -99,7 +96,7 @@ public class MainView extends VerticalLayout {
 
         HorizontalLayout actions = new HorizontalLayout(save, delete, reset);
 
-        FormLayout formLayout = new FormLayout(chatId, title, nextRun, recurrence, description, actions);
+        FormLayout formLayout = new FormLayout(chatId, title, startTime, recurrence, description, actions);
         formLayout.setColspan(description, 2);
         return formLayout;
     }
