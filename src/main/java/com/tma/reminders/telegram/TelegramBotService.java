@@ -20,7 +20,10 @@ public class TelegramBotService {
     private int lastUpdateId = 0;
 
     public TelegramBotService(TelegramBotProperties properties) {
-        this.bot = new TelegramBot(properties.token());
+        this.bot = new TelegramBot.Builder(properties.token())
+                .apiUrl("https://api.telegram.org/bot")
+                .useTestServer(properties.test())
+                .build();
     }
 
     public SendResult sendMessage(Long chatId, String text) {
