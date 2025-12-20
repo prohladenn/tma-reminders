@@ -4,6 +4,7 @@ import com.tma.reminders.reminder.Recurrence;
 import com.tma.reminders.reminder.Reminder;
 import com.tma.reminders.reminder.ReminderService;
 import com.tma.reminders.telegram.TelegramBotService;
+import com.tma.reminders.telegram.TelegramInitDataService;
 import com.tma.reminders.user.UserSettingsService;
 import com.vaadin.flow.component.ClientCallable;
 import com.vaadin.flow.component.button.Button;
@@ -38,16 +39,18 @@ public class MainView extends VerticalLayout {
 
     private final ReminderService reminderService;
     private final TelegramBotService telegramBotService;
+    private final TelegramInitDataService telegramInitDataService;
     private final UserSettingsService userSettingsService;
     private final Grid<Reminder> grid = new Grid<>(Reminder.class, false);
     private final Binder<Reminder> binder = new Binder<>(Reminder.class);
     private Reminder currentReminder;
-    private final TextField chatIdField = new TextField("Telegram chat ID");
+    private final TextField chatIdField = new TextField("Telegram chat ID (получен из Telegram)");
 
     public MainView(ReminderService reminderService, TelegramBotService telegramBotService,
-                    UserSettingsService userSettingsService) {
+                    TelegramInitDataService telegramInitDataService, UserSettingsService userSettingsService) {
         this.reminderService = reminderService;
         this.telegramBotService = telegramBotService;
+        this.telegramInitDataService = telegramInitDataService;
         this.userSettingsService = userSettingsService;
         setSizeFull();
         setPadding(true);
@@ -55,22 +58,18 @@ public class MainView extends VerticalLayout {
 
         add(buildSettings(), buildGrid(), buildForm());
         refreshGrid();
+        requestChatIdFromTelegram();
     }
 
     private HorizontalLayout buildSettings() {
-        chatIdField.setPlaceholder("Например, 330178816");
+        chatIdField.setPlaceholder("Получаем из Telegram Mini App");
+        chatIdField.setReadOnly(true);
         userSettingsService.getChatId().ifPresent(chatIdField::setValue);
-
-        Button saveChatId = new Button("Сохранить чат", e -> saveChatId());
-        saveChatId.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
 
         Button testMessage = new Button("Отправить тест", e -> sendTestMessage());
         testMessage.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
 
-        Button fetchFromTma = new Button("Получить из Telegram Mini App", e -> requestTmaLogin());
-        fetchFromTma.addThemeVariants(ButtonVariant.LUMO_SUCCESS);
-
-        return new HorizontalLayout(chatIdField, saveChatId, testMessage, fetchFromTma);
+        return new HorizontalLayout(chatIdField, testMessage);
     }
 
     private Grid<Reminder> buildGrid() {
@@ -140,7 +139,7 @@ public class MainView extends VerticalLayout {
         if (binder.writeBeanIfValid(currentReminder)) {
             var chatId = userSettingsService.getChatId().orElse(null);
             if (chatId == null || chatId.isBlank()) {
-                Notification.show("Сначала сохраните Chat ID", 3000, Notification.Position.BOTTOM_CENTER)
+                Notification.show("Chat ID пока не получен из Telegram", 3000, Notification.Position.BOTTOM_CENTER)
                         .addThemeVariants(NotificationVariant.LUMO_ERROR);
                 return;
             }
@@ -161,21 +160,10 @@ public class MainView extends VerticalLayout {
         }
     }
 
-    private void saveChatId() {
-        String chatId = chatIdField.getValue();
-        if (chatId == null || chatId.isBlank()) {
-            Notification.show("Введите Chat ID из Telegram", 3000, Notification.Position.BOTTOM_CENTER)
-                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
-            return;
-        }
-        userSettingsService.updateChatId(chatId.trim());
-        Notification.show("Chat ID сохранен", 2000, Notification.Position.BOTTOM_CENTER);
-    }
-
     private void sendTestMessage() {
         String chatId = userSettingsService.getChatId().orElse(null);
         if (chatId == null || chatId.isBlank()) {
-            Notification.show("Сначала сохраните Chat ID", 3000, Notification.Position.BOTTOM_CENTER)
+            Notification.show("Chat ID пока не получен из Telegram", 3000, Notification.Position.BOTTOM_CENTER)
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
             return;
         }
@@ -197,56 +185,38 @@ public class MainView extends VerticalLayout {
         }
     }
 
-    private void requestTmaLogin() {
+    @ClientCallable
+    public void onTelegramInitData(String initData) {
+        if (initData == null || initData.isBlank()) {
+            log.debug("Telegram init data is empty");
+            return;
+        }
+        telegramInitDataService.validateAndExtractChatId(initData)
+                .ifPresentOrElse(chatId -> {
+                    log.info("Telegram init data validated, updating chatId to {}", chatId);
+                    chatIdField.setValue(String.valueOf(chatId));
+                    userSettingsService.updateChatId(String.valueOf(chatId));
+                    Notification.show("Chat ID получен из Telegram", 2000, Notification.Position.BOTTOM_CENTER);
+                }, () -> {
+                    log.warn("Telegram init data failed validation");
+                    Notification.show("Не удалось подтвердить Telegram данные", 3000, Notification.Position.BOTTOM_CENTER)
+                            .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                });
+    }
+
+    private void requestChatIdFromTelegram() {
         getElement().executeJs(
                 """
                         const component = $0;
-                        const initData = window.Telegram?.WebApp?.initData;
+                        const rawHash = window.location.hash || '';
+                        const params = new URLSearchParams(rawHash.startsWith('#') ? rawHash.substring(1) : rawHash);
+                        const initData = params.get('tgWebAppData') ?? window.Telegram?.WebApp?.initData;
                         if (!initData) {
-                            component.$server.onTelegramLoginError('Откройте приложение через Telegram Mini App');
                             return;
                         }
-                        fetch('/telegram/login/tma', {
-                            method: 'POST',
-                            headers: {
-                                'Authorization': `tma ${initData}`
-                            }
-                        }).then(resp => {
-                            if (resp.ok) {
-                                return resp.json();
-                            }
-                            throw new Error('Вход через TMA не прошел проверку');
-                        }).then(data => {
-                            if (data && data.chatId) {
-                                component.$server.onTelegramAuth(data.chatId);
-                            } else {
-                                component.$server.onTelegramLoginError('Не удалось получить chatId из ответа');
-                            }
-                        }).catch(err => component.$server.onTelegramLoginError(err.message));
+                        component.$server.onTelegramInitData(initData);
                         """,
                 getElement()
         );
-    }
-
-    @ClientCallable
-    public void onTelegramAuth(String chatId) {
-        if (chatId == null || chatId.isBlank()) {
-            log.debug("Telegram login returned empty chatId");
-            Notification.show("Не удалось получить Chat ID из Telegram", 3000, Notification.Position.BOTTOM_CENTER)
-                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
-            return;
-        }
-        log.info("Telegram login successful, updating chatId to {}", chatId);
-        chatIdField.setValue(chatId);
-        userSettingsService.updateChatId(chatId);
-        Notification.show("Chat ID получен из Telegram", 2000, Notification.Position.BOTTOM_CENTER);
-    }
-
-    @ClientCallable
-    public void onTelegramLoginError(String message) {
-        log.warn("Telegram login failed on client: {}", message);
-        Notification.show(message != null ? message : "Ошибка входа через Telegram",
-                3000, Notification.Position.BOTTOM_CENTER)
-                .addThemeVariants(NotificationVariant.LUMO_ERROR);
     }
 }
