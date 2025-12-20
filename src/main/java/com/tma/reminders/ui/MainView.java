@@ -44,7 +44,7 @@ public class MainView extends VerticalLayout {
     private final Grid<Reminder> grid = new Grid<>(Reminder.class, false);
     private final Binder<Reminder> binder = new Binder<>(Reminder.class);
     private Reminder currentReminder;
-    private final TextField chatIdField = new TextField("Telegram chat ID");
+    private final TextField chatIdField = new TextField("Telegram chat ID (получен из Telegram)");
 
     public MainView(ReminderService reminderService, TelegramBotService telegramBotService,
                     TelegramInitDataService telegramInitDataService, UserSettingsService userSettingsService) {
@@ -62,16 +62,14 @@ public class MainView extends VerticalLayout {
     }
 
     private HorizontalLayout buildSettings() {
-        chatIdField.setPlaceholder("Например, 330178816");
+        chatIdField.setPlaceholder("Получаем из Telegram Mini App");
+        chatIdField.setReadOnly(true);
         userSettingsService.getChatId().ifPresent(chatIdField::setValue);
-
-        Button saveChatId = new Button("Сохранить чат", e -> saveChatId());
-        saveChatId.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
 
         Button testMessage = new Button("Отправить тест", e -> sendTestMessage());
         testMessage.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
 
-        return new HorizontalLayout(chatIdField, saveChatId, testMessage);
+        return new HorizontalLayout(chatIdField, testMessage);
     }
 
     private Grid<Reminder> buildGrid() {
@@ -141,7 +139,7 @@ public class MainView extends VerticalLayout {
         if (binder.writeBeanIfValid(currentReminder)) {
             var chatId = userSettingsService.getChatId().orElse(null);
             if (chatId == null || chatId.isBlank()) {
-                Notification.show("Сначала сохраните Chat ID", 3000, Notification.Position.BOTTOM_CENTER)
+                Notification.show("Chat ID пока не получен из Telegram", 3000, Notification.Position.BOTTOM_CENTER)
                         .addThemeVariants(NotificationVariant.LUMO_ERROR);
                 return;
             }
@@ -162,21 +160,10 @@ public class MainView extends VerticalLayout {
         }
     }
 
-    private void saveChatId() {
-        String chatId = chatIdField.getValue();
-        if (chatId == null || chatId.isBlank()) {
-            Notification.show("Введите Chat ID из Telegram", 3000, Notification.Position.BOTTOM_CENTER)
-                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
-            return;
-        }
-        userSettingsService.updateChatId(chatId.trim());
-        Notification.show("Chat ID сохранен", 2000, Notification.Position.BOTTOM_CENTER);
-    }
-
     private void sendTestMessage() {
         String chatId = userSettingsService.getChatId().orElse(null);
         if (chatId == null || chatId.isBlank()) {
-            Notification.show("Сначала сохраните Chat ID", 3000, Notification.Position.BOTTOM_CENTER)
+            Notification.show("Chat ID пока не получен из Telegram", 3000, Notification.Position.BOTTOM_CENTER)
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
             return;
         }
