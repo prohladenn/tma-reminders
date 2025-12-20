@@ -55,8 +55,8 @@ public class ReminderService {
         Recurrence recurrence = reminder.getRecurrence();
         if (recurrence == null || recurrence == Recurrence.ONCE) {
             reminder.setActive(false);
-            // Keep validation happy on completed reminders by resetting the timestamp to now.
-            reminder.setStartTime(LocalDateTime.now());
+            // Keep validation happy on completed reminders by resetting the timestamp just ahead of now.
+            reminder.setStartTime(LocalDateTime.now().plusSeconds(1));
             return;
         }
         switch (recurrence) {
