@@ -24,6 +24,9 @@ public class TelegramBotService {
     }
 
     public SendResult sendMessage(Long chatId, String text) {
+        if (chatId == null) {
+            return SendResult.error(null, "Chat ID is not configured");
+        }
         var response = bot.execute(new SendMessage(chatId, text));
         if (!response.isOk()) {
             log.error("Failed to send Telegram message to chat {} (errorCode={}, description={})",

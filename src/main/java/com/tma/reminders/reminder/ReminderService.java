@@ -2,6 +2,7 @@ package com.tma.reminders.reminder;
 
 import com.tma.reminders.telegram.TelegramBotService;
 import com.tma.reminders.telegram.TelegramBotService.SendResult;
+import com.tma.reminders.user.UserSettingsService;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,13 +19,19 @@ public class ReminderService {
 
     private final ReminderRepository repository;
     private final TelegramBotService telegramBotService;
+    private final UserSettingsService userSettingsService;
 
-    public ReminderService(ReminderRepository repository, TelegramBotService telegramBotService) {
+    public ReminderService(ReminderRepository repository, TelegramBotService telegramBotService,
+                           UserSettingsService userSettingsService) {
         this.repository = repository;
         this.telegramBotService = telegramBotService;
+        this.userSettingsService = userSettingsService;
     }
 
     public Reminder save(Reminder reminder) {
+        if (reminder.getChatId() == null || reminder.getChatId().isBlank()) {
+            userSettingsService.getChatId().ifPresent(reminder::setChatId);
+        }
         return repository.save(reminder);
     }
 

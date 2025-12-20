@@ -3,21 +3,22 @@ package com.tma.reminders.ui;
 import com.tma.reminders.reminder.Recurrence;
 import com.tma.reminders.reminder.Reminder;
 import com.tma.reminders.reminder.ReminderService;
+import com.tma.reminders.telegram.TelegramBotService;
+import com.tma.reminders.user.UserSettingsService;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.combobox.ComboBox;
-import com.vaadin.flow.component.datepicker.DatePicker;
 import com.vaadin.flow.component.datetimepicker.DateTimePicker;
 import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.binder.Binder;
-import com.vaadin.flow.data.converter.StringToLongConverter;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import jakarta.annotation.security.PermitAll;
@@ -31,18 +32,37 @@ import java.util.Arrays;
 public class MainView extends VerticalLayout {
 
     private final ReminderService reminderService;
+    private final TelegramBotService telegramBotService;
+    private final UserSettingsService userSettingsService;
     private final Grid<Reminder> grid = new Grid<>(Reminder.class, false);
     private final Binder<Reminder> binder = new Binder<>(Reminder.class);
     private Reminder currentReminder;
+    private final TextField chatIdField = new TextField("Telegram chat ID");
 
-    public MainView(ReminderService reminderService) {
+    public MainView(ReminderService reminderService, TelegramBotService telegramBotService,
+                    UserSettingsService userSettingsService) {
         this.reminderService = reminderService;
+        this.telegramBotService = telegramBotService;
+        this.userSettingsService = userSettingsService;
         setSizeFull();
         setPadding(true);
         setSpacing(true);
 
-        add(buildGrid(), buildForm());
+        add(buildSettings(), buildGrid(), buildForm());
         refreshGrid();
+    }
+
+    private HorizontalLayout buildSettings() {
+        chatIdField.setPlaceholder("Например, 330178816");
+        userSettingsService.getChatId().ifPresent(chatIdField::setValue);
+
+        Button saveChatId = new Button("Сохранить чат", e -> saveChatId());
+        saveChatId.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+
+        Button testMessage = new Button("Отправить тест", e -> sendTestMessage());
+        testMessage.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
+
+        return new HorizontalLayout(chatIdField, saveChatId, testMessage);
     }
 
     private Grid<Reminder> buildGrid() {
@@ -59,7 +79,6 @@ public class MainView extends VerticalLayout {
     }
 
     private FormLayout buildForm() {
-        TextField chatId = new TextField("Chat ID");
         TextField title = new TextField("Title");
         TextArea description = new TextArea("Description");
         DateTimePicker startTime = new DateTimePicker("Start time");
@@ -67,21 +86,11 @@ public class MainView extends VerticalLayout {
         recurrence.setItems(Arrays.asList(Recurrence.values()));
         recurrence.setItemLabelGenerator(Enum::name);
 
-        binder.forField(chatId)
-                .asRequired("Chat ID is required")
-                .withNullRepresentation("")
-                .withConverter(new StringToLongConverter("Chat ID must be a number"))
-                .withValidator(id -> id > 0, "Chat ID must be positive")
-                .bind(r -> {
-                            String value = r.getChatId();
-                            return value == null ? null : Long.valueOf(value);
-                        },
-                        (r, value) -> r.setChatId(value == null ? null : String.valueOf(value)));
         binder.forField(title).asRequired("Title is required").bind(Reminder::getTitle, Reminder::setTitle);
         binder.forField(description).bind(Reminder::getDescription, Reminder::setDescription);
         binder.forField(startTime)
                 .asRequired("Start time is required")
-                .withValidator(time -> time.isAfter(LocalDateTime.now()) || time.isEqual(LocalDateTime.now()),
+                .withValidator(time -> time != null && (time.isAfter(LocalDateTime.now()) || time.isEqual(LocalDateTime.now())),
                         "Time must be in the future")
                 .bind(Reminder::getStartTime, Reminder::setStartTime);
         binder.forField(recurrence)
@@ -96,7 +105,7 @@ public class MainView extends VerticalLayout {
 
         HorizontalLayout actions = new HorizontalLayout(save, delete, reset);
 
-        FormLayout formLayout = new FormLayout(chatId, title, startTime, recurrence, description, actions);
+        FormLayout formLayout = new FormLayout(title, startTime, recurrence, description, actions);
         formLayout.setColspan(description, 2);
         return formLayout;
     }
@@ -121,6 +130,13 @@ public class MainView extends VerticalLayout {
             currentReminder = new Reminder();
         }
         if (binder.writeBeanIfValid(currentReminder)) {
+            var chatId = userSettingsService.getChatId().orElse(null);
+            if (chatId == null || chatId.isBlank()) {
+                Notification.show("Сначала сохраните Chat ID", 3000, Notification.Position.BOTTOM_CENTER)
+                        .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                return;
+            }
+            currentReminder.setChatId(chatId);
             reminderService.save(currentReminder);
             Notification.show("Reminder saved", 2000, Notification.Position.BOTTOM_CENTER);
             refreshGrid();
@@ -134,6 +150,42 @@ public class MainView extends VerticalLayout {
             reminderService.delete(currentReminder.getId());
             Notification.show("Reminder deleted", 2000, Notification.Position.BOTTOM_CENTER);
             refreshGrid();
+        }
+    }
+
+    private void saveChatId() {
+        String chatId = chatIdField.getValue();
+        if (chatId == null || chatId.isBlank()) {
+            Notification.show("Введите Chat ID из Telegram", 3000, Notification.Position.BOTTOM_CENTER)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            return;
+        }
+        userSettingsService.updateChatId(chatId.trim());
+        Notification.show("Chat ID сохранен", 2000, Notification.Position.BOTTOM_CENTER);
+    }
+
+    private void sendTestMessage() {
+        String chatId = userSettingsService.getChatId().orElse(null);
+        if (chatId == null || chatId.isBlank()) {
+            Notification.show("Сначала сохраните Chat ID", 3000, Notification.Position.BOTTOM_CENTER)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            return;
+        }
+        Long parsedId;
+        try {
+            parsedId = Long.valueOf(chatId);
+        } catch (NumberFormatException ex) {
+            Notification.show("Chat ID должен быть числом", 3000, Notification.Position.BOTTOM_CENTER)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            return;
+        }
+        var result = telegramBotService.sendMessage(parsedId, "Тестовое сообщение от TMA Reminders");
+        if (result.isSuccess()) {
+            Notification.show("Тестовое сообщение отправлено", 2000, Notification.Position.BOTTOM_CENTER);
+        } else {
+            Notification notification = Notification.show("Не удалось отправить: " + result.description(),
+                    4000, Notification.Position.BOTTOM_CENTER);
+            notification.addThemeVariants(NotificationVariant.LUMO_ERROR);
         }
     }
 }
