@@ -40,6 +40,8 @@ public class MainView extends VerticalLayout implements BeforeEnterObserver {
 
     private static final Logger log = LoggerFactory.getLogger(MainView.class);
 
+    private static final Logger log = LoggerFactory.getLogger(MainView.class);
+
     private final ReminderService reminderService;
     private final TelegramBotService telegramBotService;
     private final UserSettingsService userSettingsService;
@@ -207,21 +209,31 @@ public class MainView extends VerticalLayout implements BeforeEnterObserver {
         getElement().executeJs(
                 """
                         const component = $0;
-                        const initData = window.Telegram?.WebApp?.initData || '';
-                        component.$server.processInitData(initData);
+                        const initData = window.Telegram?.WebApp?.initData;
+                        if (!initData) {
+                            component.$server.onTelegramLoginError('Откройте приложение через Telegram Mini App');
+                            return;
+                        }
+                        fetch('/telegram/login/tma', {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `tma ${initData}`
+                            }
+                        }).then(resp => {
+                            if (resp.ok) {
+                                return resp.json();
+                            }
+                            throw new Error('Вход через TMA не прошел проверку');
+                        }).then(data => {
+                            if (data && data.chatId) {
+                                component.$server.onTelegramAuth(data.chatId);
+                            } else {
+                                component.$server.onTelegramLoginError('Не удалось получить chatId из ответа');
+                            }
+                        }).catch(err => component.$server.onTelegramLoginError(err.message));
                         """,
                 getElement()
         );
-    }
-
-    @ClientCallable
-    public void processInitData(String initData) {
-        if (initData == null || initData.isBlank()) {
-            log.warn("Client did not provide initData");
-            return;
-        }
-        telegramLoginService.validateWebAppData(initData)
-                .ifPresentOrElse(this::applyChatIdFromTma, () -> onTelegramLoginError("Вход через TMA не прошел проверку"));
     }
 
     @ClientCallable
@@ -244,27 +256,5 @@ public class MainView extends VerticalLayout implements BeforeEnterObserver {
         Notification.show(message != null ? message : "Ошибка входа через Telegram",
                 3000, Notification.Position.BOTTOM_CENTER)
                 .addThemeVariants(NotificationVariant.LUMO_ERROR);
-    }
-
-    @Override
-    public void beforeEnter(BeforeEnterEvent event) {
-        var params = event.getLocation().getQueryParameters().getParameters();
-        params.getOrDefault("tgWebAppData", Collections.emptyList())
-                .stream()
-                .findFirst()
-                .ifPresent(this::handleQueryInitData);
-    }
-
-    private void handleQueryInitData(String tgWebAppData) {
-        telegramLoginService.validateWebAppData(tgWebAppData)
-                .ifPresent(this::applyChatIdFromTma);
-    }
-
-    private void applyChatIdFromTma(Long chatId) {
-        String asString = String.valueOf(chatId);
-        log.info("TMA init data validated, persisting chatId {}", asString);
-        chatIdField.setValue(asString);
-        userSettingsService.updateChatId(asString);
-        Notification.show("Chat ID получен из Telegram Mini App", 2000, Notification.Position.BOTTOM_CENTER);
     }
 }

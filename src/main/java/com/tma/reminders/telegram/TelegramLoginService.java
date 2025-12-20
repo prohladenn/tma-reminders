@@ -11,6 +11,8 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
@@ -21,6 +23,7 @@ import java.util.TreeMap;
 public class TelegramLoginService {
 
     private static final Logger log = LoggerFactory.getLogger(TelegramLoginService.class);
+    private static final Duration MAX_LOGIN_AGE = Duration.ofMinutes(10);
     private static final Duration MAX_TMA_AGE = Duration.ofHours(1);
 
     private final TelegramBotProperties properties;
@@ -31,13 +34,48 @@ public class TelegramLoginService {
         this.objectMapper = objectMapper;
     }
 
-    public Optional<Long> validateWebAppData(String tgWebAppData) {
-        if (tgWebAppData == null || tgWebAppData.isBlank()) {
+    public Optional<Long> validateAndExtractChatId(Map<String, String> loginData) {
+        if (loginData == null || loginData.isEmpty()) {
+            log.debug("Telegram login payload is empty");
+            return Optional.empty();
+        }
+
+        String hash = loginData.get("hash");
+        String authDate = loginData.get("auth_date");
+        String id = loginData.get("id");
+
+        if (hash == null || authDate == null || id == null) {
+            log.debug("Telegram login payload missing required fields: hash={}, auth_date={}, id={}", hash != null, authDate, id);
+            return Optional.empty();
+        }
+
+        if (!isRecent(authDate)) {
+            log.debug("Telegram login payload rejected because auth_date {} is older than {} minutes", authDate, MAX_LOGIN_AGE.toMinutes());
+            return Optional.empty();
+        }
+
+        String expectedHash = computeHash(loginData);
+        if (!hash.equalsIgnoreCase(expectedHash)) {
+            log.debug("Telegram login hash mismatch: provided={}, expected={}", hash, expectedHash);
+            return Optional.empty();
+        }
+
+        try {
+            Long chatId = Long.valueOf(id);
+            log.debug("Telegram login validated for chatId {}", chatId);
+            return Optional.of(chatId);
+        } catch (NumberFormatException ex) {
+            log.debug("Telegram login payload has invalid id: {}", id, ex);
+            return Optional.empty();
+        }
+    }
+
+    public Optional<Long> validateTmaInitData(String initDataRaw) {
+        if (initDataRaw == null || initDataRaw.isBlank()) {
             log.debug("TMA init data is empty");
             return Optional.empty();
         }
-        String decoded = URLDecoder.decode(tgWebAppData, StandardCharsets.UTF_8);
-        Map<String, String> initData = parseInitData(decoded);
+        Map<String, String> initData = parseInitData(initDataRaw);
         String hash = initData.get("hash");
         String authDate = initData.get("auth_date");
         if (hash == null || authDate == null) {
@@ -48,7 +86,7 @@ public class TelegramLoginService {
             log.debug("TMA init data rejected because auth_date {} is older than {} minutes", authDate, MAX_TMA_AGE.toMinutes());
             return Optional.empty();
         }
-        String expectedHash = computeWebAppHash(initData);
+        String expectedHash = computeHash(initData);
         if (!hash.equalsIgnoreCase(expectedHash)) {
             log.debug("TMA init data hash mismatch: provided={}, expected={}", hash, expectedHash);
             return Optional.empty();
@@ -74,6 +112,15 @@ public class TelegramLoginService {
         }
     }
 
+    private boolean isRecent(String authDate) {
+        try {
+            Instant timestamp = Instant.ofEpochSecond(Long.parseLong(authDate));
+            return timestamp.isAfter(Instant.now().minus(MAX_LOGIN_AGE));
+        } catch (NumberFormatException ex) {
+            return false;
+        }
+    }
+
     private boolean isRecent(String authDate, Duration maxAge) {
         try {
             Instant timestamp = Instant.ofEpochSecond(Long.parseLong(authDate));
@@ -83,7 +130,7 @@ public class TelegramLoginService {
         }
     }
 
-    private String computeWebAppHash(Map<String, String> loginData) {
+    private String computeHash(Map<String, String> loginData) {
         TreeMap<String, String> sorted = new TreeMap<>(loginData);
         sorted.remove("hash");
 
@@ -92,13 +139,13 @@ public class TelegramLoginService {
                 .reduce((a, b) -> a + "\n" + b)
                 .orElse("");
 
-        byte[] secretKey = hmacSha256("WebAppData", properties.token().getBytes(StandardCharsets.UTF_8));
+        byte[] secretKey = sha256(properties.token());
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(secretKey, "HmacSHA256"));
             return bytesToHex(mac.doFinal(dataCheckString.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception ex) {
-            throw new IllegalStateException("Failed to compute Telegram WebApp hash", ex);
+            throw new IllegalStateException("Failed to compute Telegram login hash", ex);
         }
     }
 
@@ -116,13 +163,11 @@ public class TelegramLoginService {
         return result;
     }
 
-    private byte[] hmacSha256(String key, byte[] message) {
+    private byte[] sha256(String value) {
         try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            return mac.doFinal(message);
-        } catch (Exception ex) {
-            throw new IllegalStateException("Failed to compute secret key hash", ex);
+            return MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 algorithm is not available", ex);
         }
     }
 
