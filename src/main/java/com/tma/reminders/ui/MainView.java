@@ -1,6 +1,5 @@
 package com.tma.reminders.ui;
 
-import com.tma.reminders.config.TelegramBotProperties;
 import com.tma.reminders.reminder.Recurrence;
 import com.tma.reminders.reminder.Reminder;
 import com.tma.reminders.reminder.ReminderService;
@@ -14,7 +13,6 @@ import com.vaadin.flow.component.datetimepicker.DateTimePicker;
 import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
-import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
@@ -41,33 +39,27 @@ public class MainView extends VerticalLayout {
     private final ReminderService reminderService;
     private final TelegramBotService telegramBotService;
     private final UserSettingsService userSettingsService;
-    private final TelegramBotProperties botProperties;
     private final Grid<Reminder> grid = new Grid<>(Reminder.class, false);
     private final Binder<Reminder> binder = new Binder<>(Reminder.class);
     private Reminder currentReminder;
     private final TextField chatIdField = new TextField("Telegram chat ID");
-    private final Div telegramLoginContainer = new Div();
 
     public MainView(ReminderService reminderService, TelegramBotService telegramBotService,
-                    UserSettingsService userSettingsService, TelegramBotProperties botProperties) {
+                    UserSettingsService userSettingsService) {
         this.reminderService = reminderService;
         this.telegramBotService = telegramBotService;
         this.userSettingsService = userSettingsService;
-        this.botProperties = botProperties;
         setSizeFull();
         setPadding(true);
         setSpacing(true);
 
         add(buildSettings(), buildGrid(), buildForm());
         refreshGrid();
-        initTelegramLoginWidget();
     }
 
     private HorizontalLayout buildSettings() {
         chatIdField.setPlaceholder("Например, 330178816");
         userSettingsService.getChatId().ifPresent(chatIdField::setValue);
-        telegramLoginContainer.setId("telegram-login-container");
-        telegramLoginContainer.getStyle().set("display", "inline-block");
 
         Button saveChatId = new Button("Сохранить чат", e -> saveChatId());
         saveChatId.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
@@ -75,7 +67,10 @@ public class MainView extends VerticalLayout {
         Button testMessage = new Button("Отправить тест", e -> sendTestMessage());
         testMessage.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
 
-        return new HorizontalLayout(chatIdField, saveChatId, testMessage, telegramLoginContainer);
+        Button fetchFromTma = new Button("Получить из Telegram Mini App", e -> requestTmaLogin());
+        fetchFromTma.addThemeVariants(ButtonVariant.LUMO_SUCCESS);
+
+        return new HorizontalLayout(chatIdField, saveChatId, testMessage, fetchFromTma);
     }
 
     private Grid<Reminder> buildGrid() {
@@ -202,50 +197,34 @@ public class MainView extends VerticalLayout {
         }
     }
 
-    private void initTelegramLoginWidget() {
+    private void requestTmaLogin() {
         getElement().executeJs(
                 """
                         const component = $0;
-                        const botUsername = $1;
-                        const container = document.getElementById('telegram-login-container');
-                        if (!container || !botUsername) {
+                        const initData = window.Telegram?.WebApp?.initData;
+                        if (!initData) {
+                            component.$server.onTelegramLoginError('Откройте приложение через Telegram Mini App');
                             return;
                         }
-                        const scriptId = 'telegram-login-widget-script';
-                        if (!document.getElementById(scriptId)) {
-                            const script = document.createElement('script');
-                            script.id = scriptId;
-                            script.src = 'https://telegram.org/js/telegram-widget.js?22';
-                            script.async = true;
-                            script.dataset.telegramLogin = botUsername;
-                            script.dataset.size = 'medium';
-                            script.dataset.requestAccess = 'write';
-                            script.dataset.userpic = 'false';
-                            script.dataset.onauth = 'tmaTelegramOnAuth';
-                            container.innerHTML = '';
-                            container.appendChild(script);
-                        }
-                        window.tmaTelegramOnAuth = function(user) {
-                            fetch('/telegram/login', {
-                                method: 'POST',
-                                headers: {'Content-Type': 'application/json'},
-                                body: JSON.stringify(user)
-                            }).then(resp => {
-                                if (resp.ok) {
-                                    return resp.json();
-                                }
-                                throw new Error('Login validation failed');
-                            }).then(data => {
-                                if (data && data.chatId) {
-                                    component.$server.onTelegramAuth(data.chatId);
-                                } else {
-                                    component.$server.onTelegramLoginError('Не удалось получить chatId');
-                                }
-                            }).catch(err => component.$server.onTelegramLoginError(err.message));
-                        };
+                        fetch('/telegram/login/tma', {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `tma ${initData}`
+                            }
+                        }).then(resp => {
+                            if (resp.ok) {
+                                return resp.json();
+                            }
+                            throw new Error('Вход через TMA не прошел проверку');
+                        }).then(data => {
+                            if (data && data.chatId) {
+                                component.$server.onTelegramAuth(data.chatId);
+                            } else {
+                                component.$server.onTelegramLoginError('Не удалось получить chatId из ответа');
+                            }
+                        }).catch(err => component.$server.onTelegramLoginError(err.message));
                         """,
-                getElement(),
-                botProperties.username()
+                getElement()
         );
     }
 

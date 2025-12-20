@@ -1,5 +1,7 @@
 package com.tma.reminders.telegram;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tma.reminders.config.TelegramBotProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -7,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -21,11 +24,14 @@ public class TelegramLoginService {
 
     private static final Logger log = LoggerFactory.getLogger(TelegramLoginService.class);
     private static final Duration MAX_LOGIN_AGE = Duration.ofMinutes(10);
+    private static final Duration MAX_TMA_AGE = Duration.ofHours(1);
 
     private final TelegramBotProperties properties;
+    private final ObjectMapper objectMapper;
 
-    public TelegramLoginService(TelegramBotProperties properties) {
+    public TelegramLoginService(TelegramBotProperties properties, ObjectMapper objectMapper) {
         this.properties = properties;
+        this.objectMapper = objectMapper;
     }
 
     public Optional<Long> validateAndExtractChatId(Map<String, String> loginData) {
@@ -64,10 +70,61 @@ public class TelegramLoginService {
         }
     }
 
+    public Optional<Long> validateTmaInitData(String initDataRaw) {
+        if (initDataRaw == null || initDataRaw.isBlank()) {
+            log.debug("TMA init data is empty");
+            return Optional.empty();
+        }
+        Map<String, String> initData = parseInitData(initDataRaw);
+        String hash = initData.get("hash");
+        String authDate = initData.get("auth_date");
+        if (hash == null || authDate == null) {
+            log.debug("TMA init data missing required fields: hash={}, auth_date={}", hash != null, authDate);
+            return Optional.empty();
+        }
+        if (!isRecent(authDate, MAX_TMA_AGE)) {
+            log.debug("TMA init data rejected because auth_date {} is older than {} minutes", authDate, MAX_TMA_AGE.toMinutes());
+            return Optional.empty();
+        }
+        String expectedHash = computeHash(initData);
+        if (!hash.equalsIgnoreCase(expectedHash)) {
+            log.debug("TMA init data hash mismatch: provided={}, expected={}", hash, expectedHash);
+            return Optional.empty();
+        }
+        String userJson = initData.get("user");
+        if (userJson == null) {
+            log.debug("TMA init data does not contain user payload");
+            return Optional.empty();
+        }
+        try {
+            JsonNode userNode = objectMapper.readTree(userJson);
+            JsonNode idNode = userNode.get("id");
+            if (idNode == null || !idNode.canConvertToLong()) {
+                log.debug("TMA user payload has no valid id: {}", userJson);
+                return Optional.empty();
+            }
+            long chatId = idNode.asLong();
+            log.debug("TMA init data validated for chatId {}", chatId);
+            return Optional.of(chatId);
+        } catch (Exception ex) {
+            log.debug("Failed to parse TMA user payload", ex);
+            return Optional.empty();
+        }
+    }
+
     private boolean isRecent(String authDate) {
         try {
             Instant timestamp = Instant.ofEpochSecond(Long.parseLong(authDate));
             return timestamp.isAfter(Instant.now().minus(MAX_LOGIN_AGE));
+        } catch (NumberFormatException ex) {
+            return false;
+        }
+    }
+
+    private boolean isRecent(String authDate, Duration maxAge) {
+        try {
+            Instant timestamp = Instant.ofEpochSecond(Long.parseLong(authDate));
+            return timestamp.isAfter(Instant.now().minus(maxAge));
         } catch (NumberFormatException ex) {
             return false;
         }
@@ -90,6 +147,20 @@ public class TelegramLoginService {
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to compute Telegram login hash", ex);
         }
+    }
+
+    private Map<String, String> parseInitData(String initDataRaw) {
+        TreeMap<String, String> result = new TreeMap<>();
+        for (String part : initDataRaw.split("&")) {
+            int idx = part.indexOf('=');
+            if (idx <= 0) {
+                continue;
+            }
+            String key = URLDecoder.decode(part.substring(0, idx), StandardCharsets.UTF_8);
+            String value = URLDecoder.decode(part.substring(idx + 1), StandardCharsets.UTF_8);
+            result.put(key, value);
+        }
+        return result;
     }
 
     private byte[] sha256(String value) {

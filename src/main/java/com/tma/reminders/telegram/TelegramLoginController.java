@@ -42,6 +42,29 @@ public class TelegramLoginController {
                 });
     }
 
+    @PostMapping("/tma")
+    public ResponseEntity<LoginResponse> tmaLogin(@org.springframework.web.bind.annotation.RequestHeader(value = "Authorization", required = false) String authorization) {
+        if (authorization == null || authorization.isBlank()) {
+            log.debug("TMA login missing Authorization header");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        String[] parts = authorization.split(" ", 2);
+        if (parts.length != 2 || !"tma".equalsIgnoreCase(parts[0])) {
+            log.debug("TMA login has unsupported auth type: {}", authorization);
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        String initData = parts[1];
+        return telegramLoginService.validateTmaInitData(initData)
+                .map(chatId -> {
+                    log.debug("TMA login successful for chatId {}", chatId);
+                    return ResponseEntity.ok(new LoginResponse(String.valueOf(chatId)));
+                })
+                .orElseGet(() -> {
+                    log.debug("TMA login failed validation");
+                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+                });
+    }
+
     public record LoginResponse(String chatId) {
     }
 }
