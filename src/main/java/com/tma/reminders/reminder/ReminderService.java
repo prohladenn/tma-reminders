@@ -1,6 +1,7 @@
 package com.tma.reminders.reminder;
 
 import com.tma.reminders.telegram.TelegramBotService;
+import com.tma.reminders.telegram.TelegramBotService.SendResult;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,12 +46,16 @@ public class ReminderService {
         LocalDateTime now = LocalDateTime.now();
         List<Reminder> dueReminders = repository.findDueReminders(now);
         for (Reminder reminder : dueReminders) {
-            boolean sent = telegramBotService.sendMessage(Long.valueOf(reminder.getChatId()), formatMessage(reminder));
-            if (sent) {
+            SendResult result = telegramBotService.sendMessage(Long.valueOf(reminder.getChatId()), formatMessage(reminder));
+            if (result.isSuccess()) {
                 processRecurrence(reminder);
+            } else if (result.isNotFound()) {
+                reminder.setActive(false);
+                log.warn("Disabling reminder {} for chat {} because Telegram returned 404 ({}). Check that the bot is started and chat id is correct.",
+                        reminder.getId(), reminder.getChatId(), result.description());
             } else {
-                log.warn("Reminder {} not rescheduled because sending failed. It will be retried on the next scheduler run.",
-                        reminder.getId());
+                log.warn("Reminder {} not rescheduled because sending failed ({}). It will be retried on the next scheduler run.",
+                        reminder.getId(), result.description());
             }
         }
     }
