@@ -1,6 +1,8 @@
 package com.tma.reminders.telegram;
 
 import com.tma.reminders.config.TelegramBotProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.Mac;
@@ -17,6 +19,7 @@ import java.util.TreeMap;
 @Service
 public class TelegramLoginService {
 
+    private static final Logger log = LoggerFactory.getLogger(TelegramLoginService.class);
     private static final Duration MAX_LOGIN_AGE = Duration.ofMinutes(10);
 
     private final TelegramBotProperties properties;
@@ -27,6 +30,7 @@ public class TelegramLoginService {
 
     public Optional<Long> validateAndExtractChatId(Map<String, String> loginData) {
         if (loginData == null || loginData.isEmpty()) {
+            log.debug("Telegram login payload is empty");
             return Optional.empty();
         }
 
@@ -35,20 +39,27 @@ public class TelegramLoginService {
         String id = loginData.get("id");
 
         if (hash == null || authDate == null || id == null) {
+            log.debug("Telegram login payload missing required fields: hash={}, auth_date={}, id={}", hash != null, authDate, id);
             return Optional.empty();
         }
 
         if (!isRecent(authDate)) {
+            log.debug("Telegram login payload rejected because auth_date {} is older than {} minutes", authDate, MAX_LOGIN_AGE.toMinutes());
             return Optional.empty();
         }
 
-        if (!hash.equalsIgnoreCase(computeHash(loginData))) {
+        String expectedHash = computeHash(loginData);
+        if (!hash.equalsIgnoreCase(expectedHash)) {
+            log.debug("Telegram login hash mismatch: provided={}, expected={}", hash, expectedHash);
             return Optional.empty();
         }
 
         try {
-            return Optional.of(Long.valueOf(id));
+            Long chatId = Long.valueOf(id);
+            log.debug("Telegram login validated for chatId {}", chatId);
+            return Optional.of(chatId);
         } catch (NumberFormatException ex) {
+            log.debug("Telegram login payload has invalid id: {}", id, ex);
             return Optional.empty();
         }
     }
