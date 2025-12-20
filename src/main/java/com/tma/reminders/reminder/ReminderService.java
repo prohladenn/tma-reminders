@@ -4,12 +4,16 @@ import com.tma.reminders.telegram.TelegramBotService;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
 public class ReminderService {
+
+    private static final Logger log = LoggerFactory.getLogger(ReminderService.class);
 
     private final ReminderRepository repository;
     private final TelegramBotService telegramBotService;
@@ -41,8 +45,13 @@ public class ReminderService {
         LocalDateTime now = LocalDateTime.now();
         List<Reminder> dueReminders = repository.findDueReminders(now);
         for (Reminder reminder : dueReminders) {
-            telegramBotService.sendMessage(Long.valueOf(reminder.getChatId()), formatMessage(reminder));
-            processRecurrence(reminder);
+            boolean sent = telegramBotService.sendMessage(Long.valueOf(reminder.getChatId()), formatMessage(reminder));
+            if (sent) {
+                processRecurrence(reminder);
+            } else {
+                log.warn("Reminder {} not rescheduled because sending failed. It will be retried on the next scheduler run.",
+                        reminder.getId());
+            }
         }
     }
 
