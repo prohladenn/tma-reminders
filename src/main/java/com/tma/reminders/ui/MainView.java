@@ -4,7 +4,9 @@ import com.tma.reminders.reminder.Recurrence;
 import com.tma.reminders.reminder.Reminder;
 import com.tma.reminders.reminder.ReminderService;
 import com.tma.reminders.telegram.TelegramBotService;
+import com.tma.reminders.telegram.TelegramLoginService;
 import com.tma.reminders.user.UserSettingsService;
+import com.vaadin.flow.component.ClientCallable;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.combobox.ComboBox;
@@ -19,31 +21,40 @@ import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.binder.Binder;
+import com.vaadin.flow.router.BeforeEnterEvent;
+import com.vaadin.flow.router.BeforeEnterObserver;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import jakarta.annotation.security.PermitAll;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.Collections;
 
 @Route("")
 @PageTitle("TMA Reminders")
 @PermitAll
-public class MainView extends VerticalLayout {
+public class MainView extends VerticalLayout implements BeforeEnterObserver {
+
+    private static final Logger log = LoggerFactory.getLogger(MainView.class);
 
     private final ReminderService reminderService;
     private final TelegramBotService telegramBotService;
     private final UserSettingsService userSettingsService;
+    private final TelegramLoginService telegramLoginService;
     private final Grid<Reminder> grid = new Grid<>(Reminder.class, false);
     private final Binder<Reminder> binder = new Binder<>(Reminder.class);
     private Reminder currentReminder;
     private final TextField chatIdField = new TextField("Telegram chat ID");
 
     public MainView(ReminderService reminderService, TelegramBotService telegramBotService,
-                    UserSettingsService userSettingsService) {
+                    UserSettingsService userSettingsService, TelegramLoginService telegramLoginService) {
         this.reminderService = reminderService;
         this.telegramBotService = telegramBotService;
         this.userSettingsService = userSettingsService;
+        this.telegramLoginService = telegramLoginService;
         setSizeFull();
         setPadding(true);
         setSpacing(true);
@@ -62,7 +73,10 @@ public class MainView extends VerticalLayout {
         Button testMessage = new Button("Отправить тест", e -> sendTestMessage());
         testMessage.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
 
-        return new HorizontalLayout(chatIdField, saveChatId, testMessage);
+        Button fetchFromTma = new Button("Получить из Telegram Mini App", e -> requestTmaLogin());
+        fetchFromTma.addThemeVariants(ButtonVariant.LUMO_SUCCESS);
+
+        return new HorizontalLayout(chatIdField, saveChatId, testMessage, fetchFromTma);
     }
 
     private Grid<Reminder> buildGrid() {
@@ -187,5 +201,70 @@ public class MainView extends VerticalLayout {
                     4000, Notification.Position.BOTTOM_CENTER);
             notification.addThemeVariants(NotificationVariant.LUMO_ERROR);
         }
+    }
+
+    private void requestTmaLogin() {
+        getElement().executeJs(
+                """
+                        const component = $0;
+                        const initData = window.Telegram?.WebApp?.initData || '';
+                        component.$server.processInitData(initData);
+                        """,
+                getElement()
+        );
+    }
+
+    @ClientCallable
+    public void processInitData(String initData) {
+        if (initData == null || initData.isBlank()) {
+            log.warn("Client did not provide initData");
+            return;
+        }
+        telegramLoginService.validateWebAppData(initData)
+                .ifPresentOrElse(this::applyChatIdFromTma, () -> onTelegramLoginError("Вход через TMA не прошел проверку"));
+    }
+
+    @ClientCallable
+    public void onTelegramAuth(String chatId) {
+        if (chatId == null || chatId.isBlank()) {
+            log.debug("Telegram login returned empty chatId");
+            Notification.show("Не удалось получить Chat ID из Telegram", 3000, Notification.Position.BOTTOM_CENTER)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            return;
+        }
+        log.info("Telegram login successful, updating chatId to {}", chatId);
+        chatIdField.setValue(chatId);
+        userSettingsService.updateChatId(chatId);
+        Notification.show("Chat ID получен из Telegram", 2000, Notification.Position.BOTTOM_CENTER);
+    }
+
+    @ClientCallable
+    public void onTelegramLoginError(String message) {
+        log.warn("Telegram login failed on client: {}", message);
+        Notification.show(message != null ? message : "Ошибка входа через Telegram",
+                3000, Notification.Position.BOTTOM_CENTER)
+                .addThemeVariants(NotificationVariant.LUMO_ERROR);
+    }
+
+    @Override
+    public void beforeEnter(BeforeEnterEvent event) {
+        var params = event.getLocation().getQueryParameters().getParameters();
+        params.getOrDefault("tgWebAppData", Collections.emptyList())
+                .stream()
+                .findFirst()
+                .ifPresent(this::handleQueryInitData);
+    }
+
+    private void handleQueryInitData(String tgWebAppData) {
+        telegramLoginService.validateWebAppData(tgWebAppData)
+                .ifPresent(this::applyChatIdFromTma);
+    }
+
+    private void applyChatIdFromTma(Long chatId) {
+        String asString = String.valueOf(chatId);
+        log.info("TMA init data validated, persisting chatId {}", asString);
+        chatIdField.setValue(asString);
+        userSettingsService.updateChatId(asString);
+        Notification.show("Chat ID получен из Telegram Mini App", 2000, Notification.Position.BOTTOM_CENTER);
     }
 }
