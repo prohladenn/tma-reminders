@@ -1,0 +1,12 @@
+/target
+/node_modules
+/.idea
+/.vscode
+/.project
+/.classpath
+/.settings
+/frontend/generated
+npm-debug.log*
+yarn-error.log
+.DS_Store
+.h2.server.properties
