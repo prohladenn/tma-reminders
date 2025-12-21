@@ -11,7 +11,6 @@ import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.datetimepicker.DateTimePicker;
-import com.vaadin.flow.component.dependency.CssImport;
 import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.formlayout.FormLayout.ResponsiveStep;
 import com.vaadin.flow.component.grid.Grid;
@@ -20,7 +19,8 @@ import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode;
-import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
+import com.vaadin.flow.component.orderedlayout.FlexLayout;
+import com.vaadin.flow.component.orderedlayout.FlexLayout.FlexWrap;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
@@ -37,7 +37,6 @@ import java.util.Arrays;
 @Route("")
 @PageTitle("TMA Reminders")
 @PermitAll
-@CssImport("./styles/main-view.css")
 public class MainView extends VerticalLayout {
 
     private static final Logger log = LoggerFactory.getLogger(MainView.class);
@@ -57,7 +56,6 @@ public class MainView extends VerticalLayout {
         this.telegramBotService = telegramBotService;
         this.telegramInitDataService = telegramInitDataService;
         this.userSettingsService = userSettingsService;
-        addClassName("main-view");
         setSizeFull();
         setPadding(true);
         setSpacing(true);
@@ -68,7 +66,7 @@ public class MainView extends VerticalLayout {
         requestChatIdFromTelegram();
     }
 
-    private HorizontalLayout buildSettings() {
+    private FlexLayout buildSettings() {
         chatIdField.setPlaceholder("Получаем из Telegram Mini App");
         chatIdField.setReadOnly(true);
         chatIdField.setWidthFull();
@@ -76,11 +74,16 @@ public class MainView extends VerticalLayout {
 
         Button testMessage = new Button("Отправить тест", e -> sendTestMessage());
         testMessage.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
+        testMessage.setMinWidth("150px");
+        testMessage.setWidthFull();
 
-        HorizontalLayout settingsLayout = new HorizontalLayout(chatIdField, testMessage);
-        settingsLayout.addClassName("settings-layout");
+        FlexLayout settingsLayout = new FlexLayout(chatIdField, testMessage);
+        settingsLayout.setFlexWrap(FlexWrap.WRAP);
         settingsLayout.setWidthFull();
         settingsLayout.setAlignItems(Alignment.END);
+        settingsLayout.setJustifyContentMode(JustifyContentMode.BETWEEN);
+        settingsLayout.setFlexGrow(1, chatIdField);
+        settingsLayout.getStyle().set("gap", "var(--lumo-space-s)");
         return settingsLayout;
     }
 
@@ -92,7 +95,6 @@ public class MainView extends VerticalLayout {
         grid.addColumn(Reminder::getRecurrence).setHeader("Recurrence").setAutoWidth(true).setFlexGrow(0);
         grid.addColumn(Reminder::isActive).setHeader("Active").setAutoWidth(true).setFlexGrow(0);
         grid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COMPACT);
-        grid.addClassName("reminders-grid");
         grid.setWidthFull();
         grid.setMaxHeight("60vh");
         grid.setMinHeight("260px");
@@ -129,11 +131,16 @@ public class MainView extends VerticalLayout {
         delete.addThemeVariants(ButtonVariant.LUMO_ERROR);
         Button reset = new Button("Reset", e -> setCurrentReminder(new Reminder()));
 
-        HorizontalLayout actions = new HorizontalLayout(save, delete, reset);
-        actions.addClassName("form-actions");
+        FlexLayout actions = new FlexLayout(save, delete, reset);
+        actions.setFlexWrap(FlexWrap.WRAP);
         actions.setWidthFull();
         actions.setJustifyContentMode(JustifyContentMode.START);
         actions.setAlignItems(Alignment.STRETCH);
+        actions.setFlexGrow(1, save, delete, reset);
+        save.setMinWidth("140px");
+        delete.setMinWidth("140px");
+        reset.setMinWidth("140px");
+        actions.getStyle().set("gap", "var(--lumo-space-s)");
 
         FormLayout formLayout = new FormLayout(title, startTime, recurrence, description, actions);
         formLayout.setColspan(description, 2);
