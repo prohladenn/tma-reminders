@@ -10,6 +10,8 @@ import org.springframework.core.env.Environment;
 
 import javax.sql.DataSource;
 import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 @Configuration
@@ -25,9 +27,14 @@ public class DatabaseConfig {
             return properties.initializeDataSourceBuilder().build();
         }
 
-        String jdbcUrl = toJdbcUrl(rawUrl);
-        String username = environment.getProperty("DB_USER", properties.getUsername());
-        String password = environment.getProperty("DB_PASSWORD", properties.getPassword());
+        URI databaseUri = parseDatabaseUri(rawUrl);
+        String jdbcUrl = toJdbcUrl(databaseUri);
+        String username = Optional.ofNullable(environment.getProperty("DB_USER"))
+                .or(() -> extractUserInfoPart(databaseUri, 0))
+                .orElse(properties.getUsername());
+        String password = Optional.ofNullable(environment.getProperty("DB_PASSWORD"))
+                .or(() -> extractUserInfoPart(databaseUri, 1))
+                .orElse(properties.getPassword());
 
         log.info("Configuring PostgreSQL datasource from DATABASE_URL");
         return properties.initializeDataSourceBuilder()
@@ -38,10 +45,12 @@ public class DatabaseConfig {
                 .build();
     }
 
-    private String toJdbcUrl(String rawUrl) {
+    private URI parseDatabaseUri(String rawUrl) {
         String normalized = rawUrl.replaceFirst("^postgres://", "postgresql://");
-        URI uri = URI.create(normalized);
+        return URI.create(normalized);
+    }
 
+    private String toJdbcUrl(URI uri) {
         String hostPort = uri.getPort() == -1 ? uri.getHost() : uri.getHost() + ":" + uri.getPort();
         String query = Optional.ofNullable(uri.getQuery())
                 .filter(q -> !q.isBlank())
@@ -49,5 +58,13 @@ public class DatabaseConfig {
                 .orElse("");
 
         return "jdbc:postgresql://" + hostPort + uri.getPath() + query;
+    }
+
+    private Optional<String> extractUserInfoPart(URI uri, int index) {
+        return Optional.ofNullable(uri.getUserInfo())
+                .filter(info -> !info.isBlank())
+                .map(info -> info.split(":", 2))
+                .filter(parts -> index < parts.length)
+                .map(parts -> URLDecoder.decode(parts[index], StandardCharsets.UTF_8));
     }
 }
