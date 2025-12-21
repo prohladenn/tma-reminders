@@ -22,7 +22,7 @@ class TelegramInitDataServiceTest {
 
     @Test
     void validatesAndExtractsChatIdForValidInitData() {
-        TelegramBotProperties properties = new TelegramBotProperties("testbot", "7342037359:TEST_TOKEN", true);
+        TelegramBotProperties properties = new TelegramBotProperties("7342037359:TEST_TOKEN", true);
         TelegramInitDataService service = new TelegramInitDataService(properties, new ObjectMapper());
 
         String initDataWithoutHash = "user=" + USER_JSON +
