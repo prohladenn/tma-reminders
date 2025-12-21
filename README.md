@@ -21,11 +21,11 @@
 
 1. Создайте проект Railway с PostgreSQL и бекендом из этого репозитория.
 2. Укажите переменные окружения:
-   - `SPRING_PROFILES_ACTIVE=prod` (для боевого окружения) или `SPRING_PROFILES_ACTIVE=dev` (для dev Railway окружения)
-   - `DATABASE_URL` — создайте переменную в сервисе и установите ей значение `${{ Postgres.DATABASE_URL }}` (Railway выдаёт строку подключения; приложение автоматически превратит её в JDBC-формат)
-   - `DB_USER` / `DB_PASSWORD` (опционально, если хотите переопределить логин/пароль из URL; иначе возьмутся из `DATABASE_URL`)
+   - `SPRING_PROFILES_ACTIVE=prod`
+   - `DATABASE_URL=jdbc:postgresql://<host>:<port>/<db>` (Railway выдаёт строку подключения; убедитесь, что она в JDBC-формате)
+   - `DB_USER` / `DB_PASSWORD`
    - `TELEGRAM_BOT_TOKEN_TEST`, `TELEGRAM_BOT_TOKEN_PROD`
-   - `TELEGRAM_BOT_TOKEN_ENV=prod` в прод окружении; `TELEGRAM_BOT_TOKEN_ENV=test` (или другое значение для тестового бота) в dev
+   - `TELEGRAM_BOT_TOKEN_ENV=prod` (использовать prod-бота)
 3. Railway автоматически подставляет `PORT`; приложение слушает его (фоллбек 8080).
 
 Локальная проверка образа:
