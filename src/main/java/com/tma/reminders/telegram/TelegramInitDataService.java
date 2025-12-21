@@ -2,6 +2,7 @@ package com.tma.reminders.telegram;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.annotations.VisibleForTesting;
 import com.tma.reminders.config.TelegramBotProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -147,7 +148,8 @@ public class TelegramInitDataService {
         }
     }
 
-    private boolean isRecent(String authDate) {
+    @VisibleForTesting
+    boolean isRecent(String authDate) {
         try {
             Instant timestamp = Instant.ofEpochSecond(Long.parseLong(authDate));
             return timestamp.isAfter(Instant.now().minus(MAX_INIT_DATA_AGE));
