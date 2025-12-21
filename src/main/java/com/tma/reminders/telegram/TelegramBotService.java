@@ -22,7 +22,7 @@ public class TelegramBotService {
     public TelegramBotService(TelegramBotProperties properties) {
         this.bot = new TelegramBot.Builder(properties.token())
                 .apiUrl("https://api.telegram.org/bot")
-                .useTestServer(properties.test())
+                .useTestServer(!properties.prod())
                 .build();
     }
 

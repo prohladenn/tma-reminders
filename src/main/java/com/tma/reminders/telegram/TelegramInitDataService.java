@@ -89,7 +89,7 @@ public class TelegramInitDataService {
         try {
             String dataCheckString = buildSignaturePayload(initData);
             byte[] signatureBytes = decodeBase64(signatureValue);
-            PublicKey publicKey = buildPublicKey(properties.test() ? TEST_PUBLIC_KEY_HEX : PROD_PUBLIC_KEY_HEX);
+            PublicKey publicKey = buildPublicKey(properties.prod() ? PROD_PUBLIC_KEY_HEX : TEST_PUBLIC_KEY_HEX);
 
             Signature verifier = Signature.getInstance("Ed25519");
             verifier.initVerify(publicKey);

@@ -8,10 +8,8 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "telegram.bot")
 @Validated
 public record TelegramBotProperties(
-        @NotBlank(message = "Telegram bot username must be provided")
-        String username,
         @NotBlank(message = "Telegram bot token must be provided")
         String token,
-        @NotNull(message = "Telegram bot test environment flag must be provided")
-        Boolean test) {
+        @NotNull(message = "Telegram bot production environment flag must be provided")
+        Boolean prod) {
 }
