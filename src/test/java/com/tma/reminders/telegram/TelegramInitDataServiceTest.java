@@ -4,86 +4,51 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tma.reminders.config.TelegramBotProperties;
 import org.junit.jupiter.api.Test;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
-import java.util.Map;
 import java.util.Optional;
-import java.util.TreeMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class TelegramInitDataServiceTest {
 
-    private static final String USER_JSON = """
-            {"id":5000131393,"first_name":"Valeron","last_name":"Fullstack","language_code":"en","allows_write_to_pm":true,"photo_url":"https://a-ttgme.stel.com/i/userpic/320/F6a3dpP2QvqNAwj1JhjQk5MNHa1s0aItZKUwXglcceatQ36jkQqfYpuWLcFAc6UH.svg"}
-            """;
+    private static final String VALID_TEST_INIT_DATA =
+            "user=%7B%22id%22%3A5000131393%2C%22first_name%22%3A%22Valeron%22%2C%22last_name%22%3A%22Fullstack%22%2C%22language_code%22%3A%22en%22%2C%22allows_write_to_pm%22%3Atrue%2C%22photo_url%22%3A%22https%3A%5C%2F%5C%2Fa-ttgme.stel.com%5C%2Fi%5C%2Fuserpic%5C%2F320%5C%2FF6a3dpP2QvqNAwj1JhjQk5MNHa1s0aItZKUwXglcceatQ36jkQqfYpuWLcFAc6UH.svg%22%7D&chat_instance=8307270906564316437&chat_type=sender&auth_date=1766321150&signature=3kag_ZJuyV3neFvSF3rA_RmwX0NvKvsfOR3CBSgYsL9h_PcBSo-1COdqo4uOtJQ_qgLs6Szi26_iFrq8O84HDw&hash=4d5d5c8964a414872552b72ac2308f023ab6ce96edcd42f982ca511d3872665c";
+
+    private static final String VALID_PROD_INIT_DATA =
+            "user=%7B%22id%22%3A330178816%2C%22first_name%22%3A%22Valeriy%22%2C%22last_name%22%3A%22Kovshov%22%2C%22username%22%3A%22prohladenn%22%2C%22language_code%22%3A%22en%22%2C%22is_premium%22%3Atrue%2C%22allows_write_to_pm%22%3Atrue%2C%22photo_url%22%3A%22https%3A%5C%2F%5C%2Ft.me%5C%2Fi%5C%2Fuserpic%5C%2F320%5C%2FkS8uFVyrSEle0RY8OozasQeZVEmXC2QDb9zMLfdznqc.svg%22%7D&chat_instance=-4627898068485394469&chat_type=sender&auth_date=1766321438&signature=94IIJvUVixIlxJWdhCyBIMVRMV-Zql8IAcEBqSt0-IU5TlHRKTBRbexDApX2Mgj7tuHgquERSBITC8PA72DrDA&hash=e4d8fd4d82bfb60cf8a42f1f9c32bb9f9aede01821f3d1eb72d90f8ee3d12e19";
 
     @Test
-    void validatesAndExtractsChatIdForValidInitData() {
-        TelegramBotProperties properties = new TelegramBotProperties("7342037359:TEST_TOKEN", true);
-        TelegramInitDataService service = new TelegramInitDataService(properties, new ObjectMapper());
+    void validatesTestEnvironmentInitData() {
+        String token = requireToken("TELEGRAM_BOT_TOKEN_TEST");
+        TelegramInitDataService service = new TelegramInitDataService(
+                new TelegramBotProperties(token, "prod-placeholder", "test"),
+                new ObjectMapper()
+        );
 
-        String initDataWithoutHash = "user=" + USER_JSON +
-                "&chat_instance=8473522709835892796" +
-                "&chat_type=sender" +
-                "&auth_date=1766270758" +
-                "&signature=yjzQ5fNY_aspT0YsiqfcHmruUUJSPj58KdCqDV1yPpsx1rSiUZwuVNYPkY8cbmSaigxQJL-oTgAGrXgBQk7NDA";
+        Optional<Long> result = service.validateAndExtractChatId(VALID_TEST_INIT_DATA);
 
-        String hash = computeHash(initDataWithoutHash, properties.token());
-        String initData = initDataWithoutHash + "&hash=" + hash;
-
-        Optional<Long> result = service.validateAndExtractChatId(initData);
-
-        assertTrue(result.isPresent(), "Init data should be accepted");
+        assertTrue(result.isPresent(), "Init data should be accepted in test environment");
         assertEquals(5000131393L, result.get());
     }
 
-    private String computeHash(String initData, String token) {
-        Map<String, String> params = new TreeMap<>();
-        for (String part : initData.split("&")) {
-            int idx = part.indexOf('=');
-            if (idx <= 0) {
-                continue;
-            }
-            params.put(part.substring(0, idx), part.substring(idx + 1));
-        }
-        params.putIfAbsent("hash", "");
+    @Test
+    void validatesProdEnvironmentInitData() {
+        String token = requireToken("TELEGRAM_BOT_TOKEN_PROD");
+        TelegramInitDataService service = new TelegramInitDataService(
+                new TelegramBotProperties("test-placeholder", token, "prod"),
+                new ObjectMapper()
+        );
 
-        String dataCheckString = params.entrySet().stream()
-                .filter(entry -> !"hash".equals(entry.getKey()))
-                .filter(entry -> !"signature".equals(entry.getKey()))
-                .sorted(Map.Entry.comparingByKey())
-                .map(entry -> entry.getKey() + "=" + entry.getValue())
-                .reduce((a, b) -> a + "\n" + b)
-                .orElse("");
+        Optional<Long> result = service.validateAndExtractChatId(VALID_PROD_INIT_DATA);
 
-        byte[] secret = hmacSha256("WebAppData".getBytes(StandardCharsets.UTF_8),
-                token.getBytes(StandardCharsets.UTF_8));
-        byte[] computed = hmacSha256(secret, dataCheckString.getBytes(StandardCharsets.UTF_8));
-        return bytesToHex(computed);
+        assertTrue(result.isPresent(), "Init data should be accepted in prod environment");
+        assertEquals(330178816L, result.get());
     }
 
-    private byte[] hmacSha256(byte[] key, byte[] data) {
-        try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(key, "HmacSHA256"));
-            return mac.doFinal(data);
-        } catch (Exception ex) {
-            throw new IllegalStateException("Failed to compute HMAC-SHA256", ex);
-        }
-    }
-
-    private String bytesToHex(byte[] bytes) {
-        StringBuilder hex = new StringBuilder(bytes.length * 2);
-        for (byte b : bytes) {
-            String part = Integer.toHexString(b & 0xFF);
-            if (part.length() == 1) {
-                hex.append('0');
-            }
-            hex.append(part);
-        }
-        return hex.toString();
+    private String requireToken(String envVar) {
+        String token = Optional.ofNullable(System.getenv(envVar)).orElse("").trim();
+        assumeTrue(!token.isBlank(), () -> envVar + " must be provided to run this test");
+        return token;
     }
 }
