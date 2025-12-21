@@ -1,0 +1,12 @@
+target
+.mvn
+*.log
+node_modules
+frontend
+pnpm-lock.yaml
+pnpmfile.js
+Dockerfile
+docker-compose.yml
+.idea
+.vscode
+tmp
