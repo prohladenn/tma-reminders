@@ -28,6 +28,7 @@ public class DatabaseConfig {
         }
 
         URI databaseUri = parseDatabaseUri(rawUrl);
+        validateDatabaseUri(databaseUri, rawUrl);
         String jdbcUrl = toJdbcUrl(databaseUri);
         String username = Optional.ofNullable(environment.getProperty("DB_USER"))
                 .or(() -> extractUserInfoPart(databaseUri, 0))
@@ -46,18 +47,20 @@ public class DatabaseConfig {
     }
 
     private URI parseDatabaseUri(String rawUrl) {
-        String normalized = rawUrl.replaceFirst("^postgres://", "postgresql://");
+        String withoutJdbcPrefix = rawUrl.replaceFirst("^jdbc:", "");
+        String normalized = withoutJdbcPrefix.replaceFirst("^postgres://", "postgresql://");
         return URI.create(normalized);
     }
 
     private String toJdbcUrl(URI uri) {
         String hostPort = uri.getPort() == -1 ? uri.getHost() : uri.getHost() + ":" + uri.getPort();
+        String path = Optional.ofNullable(uri.getPath()).orElse("");
         String query = Optional.ofNullable(uri.getQuery())
                 .filter(q -> !q.isBlank())
                 .map(q -> "?" + q)
                 .orElse("");
 
-        return "jdbc:postgresql://" + hostPort + uri.getPath() + query;
+        return "jdbc:postgresql://" + hostPort + path + query;
     }
 
     private Optional<String> extractUserInfoPart(URI uri, int index) {
@@ -66,5 +69,11 @@ public class DatabaseConfig {
                 .map(info -> info.split(":", 2))
                 .filter(parts -> index < parts.length)
                 .map(parts -> URLDecoder.decode(parts[index], StandardCharsets.UTF_8));
+    }
+
+    private void validateDatabaseUri(URI uri, String rawUrl) {
+        if (uri.getHost() == null || uri.getHost().isBlank()) {
+            throw new IllegalArgumentException("DATABASE_URL must include a hostname. Provided value: " + rawUrl);
+        }
     }
 }
