@@ -5,7 +5,8 @@
 /.project
 /.classpath
 /.settings
-/frontend/generated
+/src/main/frontend/index.html
+/src/main/frontend/generated
 npm-debug.log*
 yarn-error.log
 .DS_Store
