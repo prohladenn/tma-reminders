@@ -3,6 +3,7 @@ package com.tma.reminders.telegram;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tma.reminders.config.TelegramBotProperties;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.util.Optional;
 
@@ -47,10 +48,13 @@ class TelegramInitDataServiceTest {
     @Test
     void validatesTestEnvironmentInitData() {
         String token = requireToken("TELEGRAM_BOT_TOKEN_TEST");
-        TelegramInitDataService service = new TelegramInitDataService(
+        TelegramInitDataService realService = new TelegramInitDataService(
                 new TelegramBotProperties(token, "prod-placeholder", "test"),
                 new ObjectMapper()
         );
+
+        TelegramInitDataService service = Mockito.spy(realService);
+        Mockito.doReturn(true).when(service).isRecent(Mockito.anyString());
 
         Optional<Long> result = service.validateAndExtractChatId(VALID_TEST_INIT_DATA);
 
@@ -61,10 +65,13 @@ class TelegramInitDataServiceTest {
     @Test
     void validatesProdEnvironmentInitData() {
         String token = requireToken("TELEGRAM_BOT_TOKEN_PROD");
-        TelegramInitDataService service = new TelegramInitDataService(
+        TelegramInitDataService realService = new TelegramInitDataService(
                 new TelegramBotProperties("test-placeholder", token, "prod"),
                 new ObjectMapper()
         );
+
+        TelegramInitDataService service = Mockito.spy(realService);
+        Mockito.doReturn(true).when(service).isRecent(Mockito.anyString());
 
         Optional<Long> result = service.validateAndExtractChatId(VALID_PROD_INIT_DATA);
 
