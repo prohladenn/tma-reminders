@@ -11,11 +11,15 @@ import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.datetimepicker.DateTimePicker;
+import com.vaadin.flow.component.dependency.CssImport;
 import com.vaadin.flow.component.formlayout.FormLayout;
+import com.vaadin.flow.component.formlayout.FormLayout.ResponsiveStep;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.GridVariant;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
+import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
+import com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextArea;
@@ -33,6 +37,7 @@ import java.util.Arrays;
 @Route("")
 @PageTitle("TMA Reminders")
 @PermitAll
+@CssImport("./styles/main-view.css")
 public class MainView extends VerticalLayout {
 
     private static final Logger log = LoggerFactory.getLogger(MainView.class);
@@ -52,9 +57,11 @@ public class MainView extends VerticalLayout {
         this.telegramBotService = telegramBotService;
         this.telegramInitDataService = telegramInitDataService;
         this.userSettingsService = userSettingsService;
+        addClassName("main-view");
         setSizeFull();
         setPadding(true);
         setSpacing(true);
+        setAlignItems(Alignment.STRETCH);
 
         add(buildSettings(), buildGrid(), buildForm());
         refreshGrid();
@@ -64,32 +71,44 @@ public class MainView extends VerticalLayout {
     private HorizontalLayout buildSettings() {
         chatIdField.setPlaceholder("Получаем из Telegram Mini App");
         chatIdField.setReadOnly(true);
+        chatIdField.setWidthFull();
         userSettingsService.getChatId().ifPresent(chatIdField::setValue);
 
         Button testMessage = new Button("Отправить тест", e -> sendTestMessage());
         testMessage.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
 
-        return new HorizontalLayout(chatIdField, testMessage);
+        HorizontalLayout settingsLayout = new HorizontalLayout(chatIdField, testMessage);
+        settingsLayout.addClassName("settings-layout");
+        settingsLayout.setWidthFull();
+        settingsLayout.setAlignItems(Alignment.END);
+        return settingsLayout;
     }
 
     private Grid<Reminder> buildGrid() {
-        grid.addColumn(Reminder::getId).setHeader("ID").setAutoWidth(true);
-        grid.addColumn(Reminder::getChatId).setHeader("Chat ID").setAutoWidth(true);
-        grid.addColumn(Reminder::getTitle).setHeader("Title").setAutoWidth(true);
-        grid.addColumn(Reminder::getStartTime).setHeader("Next run").setAutoWidth(true);
-        grid.addColumn(Reminder::getRecurrence).setHeader("Recurrence").setAutoWidth(true);
-        grid.addColumn(Reminder::isActive).setHeader("Active").setAutoWidth(true);
-        grid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES);
-        grid.setHeight("350px");
+        grid.addColumn(Reminder::getId).setHeader("ID").setAutoWidth(true).setFlexGrow(0);
+        grid.addColumn(Reminder::getChatId).setHeader("Chat ID").setAutoWidth(true).setFlexGrow(1);
+        grid.addColumn(Reminder::getTitle).setHeader("Title").setAutoWidth(true).setFlexGrow(1);
+        grid.addColumn(Reminder::getStartTime).setHeader("Next run").setAutoWidth(true).setFlexGrow(1);
+        grid.addColumn(Reminder::getRecurrence).setHeader("Recurrence").setAutoWidth(true).setFlexGrow(0);
+        grid.addColumn(Reminder::isActive).setHeader("Active").setAutoWidth(true).setFlexGrow(0);
+        grid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COMPACT);
+        grid.addClassName("reminders-grid");
+        grid.setWidthFull();
+        grid.setMaxHeight("60vh");
+        grid.setMinHeight("260px");
         grid.addSelectionListener(event -> event.getFirstSelectedItem().ifPresent(this::editReminder));
         return grid;
     }
 
     private FormLayout buildForm() {
         TextField title = new TextField("Title");
+        title.setWidthFull();
         TextArea description = new TextArea("Description");
+        description.setWidthFull();
         DateTimePicker startTime = new DateTimePicker("Start time");
+        startTime.setWidthFull();
         ComboBox<Recurrence> recurrence = new ComboBox<>("Recurrence");
+        recurrence.setWidthFull();
         recurrence.setItems(Arrays.asList(Recurrence.values()));
         recurrence.setItemLabelGenerator(Enum::name);
 
@@ -111,9 +130,19 @@ public class MainView extends VerticalLayout {
         Button reset = new Button("Reset", e -> setCurrentReminder(new Reminder()));
 
         HorizontalLayout actions = new HorizontalLayout(save, delete, reset);
+        actions.addClassName("form-actions");
+        actions.setWidthFull();
+        actions.setJustifyContentMode(JustifyContentMode.START);
+        actions.setAlignItems(Alignment.STRETCH);
 
         FormLayout formLayout = new FormLayout(title, startTime, recurrence, description, actions);
         formLayout.setColspan(description, 2);
+        formLayout.setColspan(actions, 2);
+        formLayout.setWidthFull();
+        formLayout.setResponsiveSteps(
+                new ResponsiveStep("0", 1),
+                new ResponsiveStep("640px", 2)
+        );
         return formLayout;
     }
 
