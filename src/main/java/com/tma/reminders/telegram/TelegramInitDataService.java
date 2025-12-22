@@ -12,13 +12,8 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.security.KeyFactory;
-import java.security.PublicKey;
-import java.security.Signature;
-import java.security.spec.X509EncodedKeySpec;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
@@ -29,9 +24,7 @@ public class TelegramInitDataService {
 
     private static final Logger log = LoggerFactory.getLogger(TelegramInitDataService.class);
 
-    private static final String PROD_PUBLIC_KEY_HEX = "e7bf03a2fa4602af4580703d88dda5bb59f32ed8b02a56c187fe7d34caed242d";
-    private static final String TEST_PUBLIC_KEY_HEX = "40055058a4ee38156a06562e52eece92a771bcd8346a8c4615cb7376eddf72ec";
-    private static final Duration MAX_INIT_DATA_AGE = Duration.ofHours(1);
+    private static final Duration MAX_INIT_DATA_AGE = Duration.ofHours(2);
 
     private final TelegramBotProperties properties;
     private final ObjectMapper objectMapper;
@@ -61,8 +54,8 @@ public class TelegramInitDataService {
             return Optional.empty();
         }
 
-        if (!verifySignature(initData) && !verifyHash(initData)) {
-            log.debug("Init data failed both signature and hash verification");
+        if (!verifyHash(initData)) {
+            log.debug("Init data hash verification failed");
             return Optional.empty();
         }
 
@@ -73,37 +66,12 @@ public class TelegramInitDataService {
         boolean hasUser = initData.containsKey("user");
         boolean hasAuthDate = initData.containsKey("auth_date");
         boolean hasHash = initData.containsKey("hash");
-        boolean hasSignature = initData.containsKey("signature");
-        if (!hasUser || !hasAuthDate || (!hasHash && !hasSignature)) {
-            log.debug("Init data missing required fields: user={}, auth_date={}, hash={}, signature={}",
-                    hasUser, hasAuthDate, hasHash, hasSignature);
+        if (!hasUser || !hasAuthDate || !hasHash) {
+            log.debug("Init data missing required fields: user={}, auth_date={}, hash={}",
+                    hasUser, hasAuthDate, hasHash);
             return false;
         }
         return true;
-    }
-
-    private boolean verifySignature(Map<String, String> initData) {
-        String signatureValue = initData.get("signature");
-        if (signatureValue == null || signatureValue.isBlank()) {
-            return false;
-        }
-        try {
-            String dataCheckString = buildSignaturePayload(initData);
-            byte[] signatureBytes = decodeBase64(signatureValue);
-            PublicKey publicKey = buildPublicKey(properties.prod() ? PROD_PUBLIC_KEY_HEX : TEST_PUBLIC_KEY_HEX);
-
-            Signature verifier = Signature.getInstance("Ed25519");
-            verifier.initVerify(publicKey);
-            verifier.update(dataCheckString.getBytes(StandardCharsets.UTF_8));
-            boolean verified = verifier.verify(signatureBytes);
-            if (!verified) {
-                log.debug("Init data Ed25519 signature verification failed");
-            }
-            return verified;
-        } catch (Exception ex) {
-            log.debug("Failed to verify init data signature", ex);
-            return false;
-        }
     }
 
     private boolean verifyHash(Map<String, String> initData) {
@@ -114,21 +82,13 @@ public class TelegramInitDataService {
         byte[] secret = hmacSha256("WebAppData".getBytes(StandardCharsets.UTF_8),
                 properties.token().getBytes(StandardCharsets.UTF_8));
 
-        String dataCheckString = buildDataCheckString(initData, false);
+        String dataCheckString = buildDataCheckString(initData);
         String expectedHash = bytesToHex(hmacSha256(secret, dataCheckString.getBytes(StandardCharsets.UTF_8)));
-        if (expectedHash.equalsIgnoreCase(providedHash)) {
-            return true;
+        boolean matches = expectedHash.equalsIgnoreCase(providedHash);
+        if (!matches) {
+            log.debug("Init data hash mismatch: provided={}, expected={}", providedHash, expectedHash);
         }
-
-        String dataCheckWithSignature = buildDataCheckString(initData, true);
-        String expectedWithSignature = bytesToHex(hmacSha256(secret, dataCheckWithSignature.getBytes(StandardCharsets.UTF_8)));
-        if (expectedWithSignature.equalsIgnoreCase(providedHash)) {
-            return true;
-        }
-
-        log.debug("Init data hash mismatch: provided={}, expectedWithoutSignature={}, expectedWithSignature={}",
-                providedHash, expectedHash, expectedWithSignature);
-        return false;
+        return matches;
     }
 
     private Optional<Long> extractUserId(String userJson) {
@@ -173,41 +133,12 @@ public class TelegramInitDataService {
         return result;
     }
 
-    private String buildDataCheckString(Map<String, String> initData, boolean includeSignature) {
+    private String buildDataCheckString(Map<String, String> initData) {
         return initData.entrySet().stream()
                 .filter(entry -> !"hash".equals(entry.getKey()))
-                .filter(entry -> includeSignature || !"signature".equals(entry.getKey()))
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> entry.getKey() + "=" + entry.getValue())
                 .collect(Collectors.joining("\n"));
-    }
-
-    private String buildSignaturePayload(Map<String, String> initData) {
-        String botId = extractBotId(properties.token());
-        String dataCheckString = buildDataCheckString(initData, false);
-        return botId + ":WebAppData\n" + dataCheckString;
-    }
-
-    private String extractBotId(String token) {
-        int idx = token.indexOf(':');
-        if (idx > 0) {
-            return token.substring(0, idx);
-        }
-        return token;
-    }
-
-    private PublicKey buildPublicKey(String publicKeyHex) {
-        try {
-            byte[] rawKey = hexToBytes(publicKeyHex);
-            byte[] prefix = hexToBytes("302a300506032b6570032100");
-            byte[] encoded = new byte[prefix.length + rawKey.length];
-            System.arraycopy(prefix, 0, encoded, 0, prefix.length);
-            System.arraycopy(rawKey, 0, encoded, prefix.length, rawKey.length);
-            X509EncodedKeySpec keySpec = new X509EncodedKeySpec(encoded);
-            return KeyFactory.getInstance("Ed25519").generatePublic(keySpec);
-        } catch (Exception ex) {
-            throw new IllegalStateException("Failed to build Ed25519 public key", ex);
-        }
     }
 
     private byte[] hmacSha256(byte[] key, byte[] data) {
@@ -218,28 +149,6 @@ public class TelegramInitDataService {
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to compute HMAC-SHA256", ex);
         }
-    }
-
-    private byte[] decodeBase64(String value) {
-        String padded = padBase64(value);
-        return Base64.getUrlDecoder().decode(padded);
-    }
-
-    private String padBase64(String value) {
-        int remainder = value.length() % 4;
-        if (remainder == 0) {
-            return value;
-        }
-        return value + "=".repeat(4 - remainder);
-    }
-
-    private byte[] hexToBytes(String hex) {
-        int length = hex.length();
-        byte[] bytes = new byte[length / 2];
-        for (int i = 0; i < length; i += 2) {
-            bytes[i / 2] = (byte) Integer.parseInt(hex.substring(i, i + 2), 16);
-        }
-        return bytes;
     }
 
     private String bytesToHex(byte[] bytes) {
