@@ -25,7 +25,8 @@ public class Reminder {
     @NotNull
     private LocalDateTime startTime;
 
-    private LocalDateTime nextAttemptAt;
+    @Column(name = "next_attempt_at")
+    private LocalDateTime nextFireAt;
 
     private LocalDateTime lastSentAt;
 
@@ -37,7 +38,8 @@ public class Reminder {
     @Column(length = 20)
     private Recurrence recurrence;
 
-    private boolean active = true;
+    @Column(name = "active")
+    private boolean isActive = true;
 
     public Long getId() {
         return id;
@@ -79,12 +81,12 @@ public class Reminder {
         this.startTime = startTime;
     }
 
-    public LocalDateTime getNextAttemptAt() {
-        return nextAttemptAt;
+    public LocalDateTime getNextFireAt() {
+        return nextFireAt;
     }
 
-    public void setNextAttemptAt(LocalDateTime nextAttemptAt) {
-        this.nextAttemptAt = nextAttemptAt;
+    public void setNextFireAt(LocalDateTime nextFireAt) {
+        this.nextFireAt = nextFireAt;
     }
 
     public LocalDateTime getLastSentAt() {
@@ -120,10 +122,10 @@ public class Reminder {
     }
 
     public boolean isActive() {
-        return active;
+        return isActive;
     }
 
     public void setActive(boolean active) {
-        this.active = active;
+        isActive = active;
     }
 }

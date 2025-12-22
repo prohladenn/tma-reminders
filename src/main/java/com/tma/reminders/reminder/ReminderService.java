@@ -39,9 +39,10 @@ public class ReminderService {
         if (reminder.getChatId() == null || reminder.getChatId().isBlank()) {
             userSettingsService.getChatId().ifPresent(reminder::setChatId);
         }
-        reminder.setNextAttemptAt(reminder.getStartTime());
+        reminder.setNextFireAt(reminder.getStartTime());
         reminder.setSendAttempts(0);
         reminder.setLastSentAt(null);
+        reminder.setLastSentMessageId(null);
         return repository.save(reminder);
     }
 
@@ -63,9 +64,11 @@ public class ReminderService {
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         List<Reminder> dueReminders = repository.findDueReminders(now);
         for (Reminder reminder : dueReminders) {
-            normalizeNextAttempt(reminder);
+            initializeNextFireAt(reminder);
+            int attemptNumber = reminder.getSendAttempts() + 1;
+            reminder.setSendAttempts(attemptNumber);
             Integer previousMessageId = reminder.getLastSentMessageId();
-            boolean isRetry = reminder.getSendAttempts() > 0;
+            boolean isRetry = attemptNumber > 1;
             SendResult result;
             try {
                 result = telegramBotService.sendMessage(Long.valueOf(reminder.getChatId()), formatMessage(reminder, false),
@@ -80,6 +83,7 @@ public class ReminderService {
                 handleSuccessfulSend(reminder, now, result, previousMessageId, isRetry);
             } else if (result.isNotFound()) {
                 reminder.setActive(false);
+                reminder.setNextFireAt(null);
                 log.warn("Disabling reminder {} for chat {} because Telegram returned 404 ({}). Check that the bot is started and chat id is correct.",
                         reminder.getId(), reminder.getChatId(), result.description());
             } else {
@@ -95,7 +99,7 @@ public class ReminderService {
                 .map(reminder -> {
                     Integer messageId = reminder.getLastSentMessageId();
                     String completedText = formatMessage(reminder, true);
-                    scheduleNextOccurrence(reminder);
+                    handleCompletion(reminder);
                     return new CompletionResult(true, messageId, completedText);
                 })
                 .orElse(new CompletionResult(false, null, null));
@@ -110,24 +114,30 @@ public class ReminderService {
             telegramBotService.deleteMessage(Long.valueOf(reminder.getChatId()), previousMessageId);
         }
 
-        scheduleNextOccurrence(reminder);
-    }
-
-    private void handleFailedSend(Reminder reminder, LocalDateTime now, String description) {
-        reminder.setSendAttempts(reminder.getSendAttempts() + 1);
-        if (reminder.getSendAttempts() >= MAX_DELIVERY_ATTEMPTS) {
-            scheduleNextOccurrence(reminder);
-            log.warn("Reminder {} reached max attempts after failure ({}); moving to next occurrence.", reminder.getId(), description);
+        if (hasUsedAllAttempts(reminder)) {
+            scheduleAfterFinalAttempt(reminder);
         } else {
-            reminder.setNextAttemptAt(now.plus(RESEND_INTERVAL));
-            String descriptionWithRetryInfo = appendRetryInfo(description, reminder.getSendAttempts() + 1);
-            log.warn("Reminder {} will retry after failure ({}). Next attempt at {} UTC.", reminder.getId(), descriptionWithRetryInfo, reminder.getNextAttemptAt());
+            reminder.setNextFireAt(now.plus(RESEND_INTERVAL));
         }
     }
 
-    private void normalizeNextAttempt(Reminder reminder) {
-        if (reminder.getNextAttemptAt() == null) {
-            reminder.setNextAttemptAt(reminder.getStartTime());
+    private void handleFailedSend(Reminder reminder, LocalDateTime now, String description) {
+        if (hasUsedAllAttempts(reminder)) {
+            scheduleAfterFinalAttempt(reminder);
+            log.warn("Reminder {} reached max attempts after failure ({}); moving forward.", reminder.getId(), description);
+        } else {
+            reminder.setNextFireAt(now.plus(RESEND_INTERVAL));
+            String descriptionWithRetryInfo = appendRetryInfo(description, reminder.getSendAttempts() + 1);
+            log.warn("Reminder {} will retry after failure ({}). Next attempt at {} UTC.", reminder.getId(), descriptionWithRetryInfo, reminder.getNextFireAt());
+        }
+    }
+
+    private void initializeNextFireAt(Reminder reminder) {
+        if (reminder.getNextFireAt() == null) {
+            if (reminder.getStartTime() == null) {
+                reminder.setStartTime(LocalDateTime.now(ZoneOffset.UTC));
+            }
+            reminder.setNextFireAt(reminder.getStartTime());
         }
     }
 
@@ -143,29 +153,56 @@ public class ReminderService {
         );
     }
 
-    private void scheduleNextOccurrence(Reminder reminder) {
-        Recurrence recurrence = reminder.getRecurrence();
-        if (recurrence == null || recurrence == Recurrence.ONCE) {
-            reminder.setActive(false);
-            // Move the timestamp forward to keep completed reminders out of due queries.
-            reminder.setStartTime(LocalDateTime.now(ZoneOffset.UTC).plusSeconds(1));
-        } else {
-            switch (recurrence) {
-                case DAILY -> reminder.setStartTime(reminder.getStartTime().plusDays(1));
-                case WEEKLY -> reminder.setStartTime(reminder.getStartTime().plusWeeks(1));
-                case MONTHLY -> reminder.setStartTime(reminder.getStartTime().plusMonths(1));
-                default -> reminder.setActive(false);
-            }
-        }
-        reminder.setNextAttemptAt(reminder.getStartTime());
-        reminder.setSendAttempts(0);
-    }
-
     public record CompletionResult(boolean completed, Integer messageId, String updatedText) {
     }
 
     private String appendRetryInfo(String description, int retryNumber) {
         String baseDescription = description == null ? "null" : description;
         return "%s (retry %d of %d)".formatted(baseDescription, retryNumber, MAX_DELIVERY_ATTEMPTS);
+    }
+
+    private boolean hasUsedAllAttempts(Reminder reminder) {
+        return reminder.getSendAttempts() >= MAX_DELIVERY_ATTEMPTS;
+    }
+
+    private void scheduleAfterFinalAttempt(Reminder reminder) {
+        Recurrence recurrence = reminder.getRecurrence();
+        if (recurrence == null || recurrence == Recurrence.ONCE) {
+            reminder.setActive(false);
+            reminder.setNextFireAt(null);
+            return;
+        }
+
+        reminder.setStartTime(calculateNextStartTime(reminder));
+        reminder.setNextFireAt(reminder.getStartTime());
+        reminder.setSendAttempts(0);
+        reminder.setLastSentAt(null);
+        reminder.setLastSentMessageId(null);
+    }
+
+    private void handleCompletion(Reminder reminder) {
+        if (reminder.getRecurrence() == null || reminder.getRecurrence() == Recurrence.ONCE) {
+            reminder.setActive(false);
+            reminder.setNextFireAt(null);
+        } else {
+            reminder.setStartTime(calculateNextStartTime(reminder));
+            reminder.setNextFireAt(reminder.getStartTime());
+            reminder.setSendAttempts(0);
+            reminder.setLastSentAt(null);
+            reminder.setLastSentMessageId(null);
+        }
+    }
+
+    private LocalDateTime calculateNextStartTime(Reminder reminder) {
+        LocalDateTime baseTime = reminder.getStartTime();
+        if (baseTime == null) {
+            baseTime = LocalDateTime.now(ZoneOffset.UTC);
+        }
+        return switch (reminder.getRecurrence()) {
+            case DAILY -> baseTime.plusDays(1);
+            case WEEKLY -> baseTime.plusWeeks(1);
+            case MONTHLY -> baseTime.plusMonths(1);
+            default -> baseTime;
+        };
     }
 }
