@@ -63,6 +63,7 @@ public class ReminderService {
         List<Reminder> dueReminders = repository.findDueReminders(now);
         for (Reminder reminder : dueReminders) {
             normalizeNextAttempt(reminder);
+            deletePreviousMessageIfRetry(reminder);
             SendResult result = telegramBotService.sendMessage(Long.valueOf(reminder.getChatId()), formatMessage(reminder, false),
                     completedKeyboard(reminder));
             if (result.isSuccess()) {
@@ -111,6 +112,13 @@ public class ReminderService {
     private void normalizeNextAttempt(Reminder reminder) {
         if (reminder.getNextAttemptAt() == null) {
             reminder.setNextAttemptAt(reminder.getStartTime());
+        }
+    }
+
+    private void deletePreviousMessageIfRetry(Reminder reminder) {
+        if (reminder.getSendAttempts() > 0 && reminder.getLastSentMessageId() != null) {
+            telegramBotService.deleteMessage(Long.valueOf(reminder.getChatId()), reminder.getLastSentMessageId());
+            reminder.setLastSentMessageId(null);
         }
     }
 
