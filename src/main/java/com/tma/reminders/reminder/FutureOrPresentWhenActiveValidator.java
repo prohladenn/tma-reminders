@@ -16,7 +16,10 @@ public class FutureOrPresentWhenActiveValidator implements ConstraintValidator<F
         if (!reminder.isActive()) {
             return true;
         }
-        LocalDateTime startTime = reminder.getStartTime();
-        return startTime != null && !startTime.isBefore(LocalDateTime.now(ZoneOffset.UTC));
+        LocalDateTime nextAttemptAt = reminder.getNextAttemptAt();
+        if (nextAttemptAt == null) {
+            nextAttemptAt = reminder.getStartTime();
+        }
+        return nextAttemptAt != null && !nextAttemptAt.isBefore(LocalDateTime.now(ZoneOffset.UTC));
     }
 }
