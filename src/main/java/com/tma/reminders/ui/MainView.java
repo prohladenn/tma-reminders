@@ -124,7 +124,7 @@ public class MainView extends VerticalLayout {
         description.setWidthFull();
         startTime.setWidthFull();
         startTime.setStep(Duration.ofMinutes(5));
-        startTime.setHelperText("Выберите время в UTC сегодня или позже");
+        startTime.setHelperText("Выберите время в UTC");
         startTime.setLocale(Locale.forLanguageTag("ru-RU"));
         recurrence.setWidthFull();
         recurrence.setItems(Arrays.asList(Recurrence.values()));
@@ -134,8 +134,6 @@ public class MainView extends VerticalLayout {
         binder.forField(description).bind(Reminder::getDescription, Reminder::setDescription);
         binder.forField(startTime)
                 .asRequired("Start time is required")
-                .withValidator(time -> time != null && (time.isAfter(LocalDateTime.now(ZoneOffset.UTC)) || time.isEqual(LocalDateTime.now(ZoneOffset.UTC))),
-                        "Time must be in the future")
                 .bind(Reminder::getStartTime, Reminder::setStartTime);
         binder.forField(recurrence)
                 .asRequired("Recurrence is required")
@@ -362,15 +360,13 @@ public class MainView extends VerticalLayout {
     }
 
     private void updateEditingState(Reminder reminder) {
-        boolean isPast = reminder.getStartTime() != null
-                && reminder.getStartTime().isBefore(LocalDateTime.now(ZoneOffset.UTC));
-        title.setReadOnly(isPast);
-        description.setReadOnly(isPast);
-        startTime.setReadOnly(isPast);
-        recurrence.setReadOnly(isPast);
-        activeToggle.setReadOnly(isPast);
-        save.setEnabled(!isPast);
-        activeToggle.setEnabled(!isPast);
-        startTime.setMin(isPast ? null : LocalDateTime.now(ZoneOffset.UTC));
+        title.setReadOnly(false);
+        description.setReadOnly(false);
+        startTime.setReadOnly(false);
+        recurrence.setReadOnly(false);
+        activeToggle.setReadOnly(false);
+        save.setEnabled(true);
+        activeToggle.setEnabled(true);
+        startTime.setMin(null);
     }
 }

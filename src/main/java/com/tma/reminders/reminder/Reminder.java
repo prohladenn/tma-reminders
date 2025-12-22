@@ -1,7 +1,6 @@
 package com.tma.reminders.reminder;
 
 import jakarta.persistence.*;
-import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
@@ -24,7 +23,6 @@ public class Reminder {
     private String description;
 
     @NotNull
-    @FutureOrPresent
     private LocalDateTime startTime;
 
     private LocalDateTime nextAttemptAt;
