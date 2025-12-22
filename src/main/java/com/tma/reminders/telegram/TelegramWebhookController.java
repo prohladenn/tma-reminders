@@ -110,7 +110,8 @@ public class TelegramWebhookController {
     private void createReminderFromText(Message message, String chatId, String text) {
         String[] parts = text.split(";", 4);
         if (parts.length < 3) {
-            telegramBotService.sendMessage(message.chat().id(), "Используйте формат: Заголовок; yyyy-MM-dd HH:mm; DAILY|WEEKLY|MONTHLY|ONCE; Описание");
+            telegramBotService.sendMessage(message.chat().id(), "Используйте формат: Заголовок; yyyy-MM-dd HH:mm; DAILY|WEEKLY|MONTHLY|ONCE; Описание",
+                    telegramBotService.numericTimeKeyboard());
             return;
         }
         try {
@@ -125,7 +126,8 @@ public class TelegramWebhookController {
             reminderService.save(reminder);
             telegramBotService.sendMessage(message.chat().id(), "Напоминание сохранено: " + reminder.getTitle());
         } catch (DateTimeParseException | IllegalArgumentException ex) {
-            telegramBotService.sendMessage(message.chat().id(), "Ошибка разбора. Проверьте дату и тип повторения.");
+            telegramBotService.sendMessage(message.chat().id(), "Ошибка разбора. Проверьте дату и тип повторения.",
+                    telegramBotService.numericTimeKeyboard());
         }
     }
 

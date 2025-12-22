@@ -39,6 +39,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
 @Route("")
 @PageTitle("TMA Reminders")
@@ -123,6 +124,7 @@ public class MainView extends VerticalLayout {
         startTime.setWidthFull();
         startTime.setStep(Duration.ofMinutes(5));
         startTime.setHelperText("Выберите время сегодня или позже");
+        startTime.setLocale(Locale.forLanguageTag("ru-RU"));
         recurrence.setWidthFull();
         recurrence.setItems(Arrays.asList(Recurrence.values()));
         recurrence.setItemLabelGenerator(Enum::name);
