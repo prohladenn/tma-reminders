@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 @Service
@@ -59,21 +60,22 @@ public class ReminderService {
     @Scheduled(fixedRateString = "${reminders.scheduler.rate-ms:60000}")
     @Transactional
     public void dispatchDueReminders() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         List<Reminder> dueReminders = repository.findDueReminders(now);
         for (Reminder reminder : dueReminders) {
             normalizeNextAttempt(reminder);
+            Integer previousMessageId = reminder.getLastSentMessageId();
+            boolean isRetry = reminder.getSendAttempts() > 0;
             SendResult result = telegramBotService.sendMessage(Long.valueOf(reminder.getChatId()), formatMessage(reminder, false),
                     completedKeyboard(reminder));
             if (result.isSuccess()) {
-                handleSuccessfulSend(reminder, now, result);
+                handleSuccessfulSend(reminder, now, result, previousMessageId, isRetry);
             } else if (result.isNotFound()) {
                 reminder.setActive(false);
                 log.warn("Disabling reminder {} for chat {} because Telegram returned 404 ({}). Check that the bot is started and chat id is correct.",
                         reminder.getId(), reminder.getChatId(), result.description());
             } else {
-                log.warn("Reminder {} not rescheduled because sending failed ({}). It will be retried on the next scheduler run.",
-                        reminder.getId(), result.description());
+                handleFailedSend(reminder, now, result.description());
             }
         }
     }
@@ -91,8 +93,8 @@ public class ReminderService {
                 .orElse(new CompletionResult(false, null, null));
     }
 
-    private void handleSuccessfulSend(Reminder reminder, LocalDateTime now, SendResult result) {
-        Integer previousMessageId = reminder.getLastSentMessageId();
+    private void handleSuccessfulSend(Reminder reminder, LocalDateTime now, SendResult result,
+                                      Integer previousMessageId, boolean isRetry) {
         reminder.setLastSentAt(now);
         reminder.setSendAttempts(reminder.getSendAttempts() + 1);
         reminder.setLastSentMessageId(result.messageId());
@@ -103,8 +105,19 @@ public class ReminderService {
             reminder.setNextAttemptAt(now.plus(RESEND_INTERVAL));
         }
 
-        if (previousMessageId != null && result.messageId() != null && !previousMessageId.equals(result.messageId())) {
+        if (isRetry && previousMessageId != null && result.messageId() != null && !previousMessageId.equals(result.messageId())) {
             telegramBotService.deleteMessage(Long.valueOf(reminder.getChatId()), previousMessageId);
+        }
+    }
+
+    private void handleFailedSend(Reminder reminder, LocalDateTime now, String description) {
+        reminder.setSendAttempts(reminder.getSendAttempts() + 1);
+        if (reminder.getSendAttempts() >= MAX_DELIVERY_ATTEMPTS) {
+            scheduleNextOccurrence(reminder);
+            log.warn("Reminder {} reached max attempts after failure ({}); moving to next occurrence.", reminder.getId(), description);
+        } else {
+            reminder.setNextAttemptAt(now.plus(RESEND_INTERVAL));
+            log.warn("Reminder {} will retry after failure ({}). Next attempt at {} UTC.", reminder.getId(), description, reminder.getNextAttemptAt());
         }
     }
 
@@ -131,7 +144,7 @@ public class ReminderService {
         if (recurrence == null || recurrence == Recurrence.ONCE) {
             reminder.setActive(false);
             // Keep validation happy on completed reminders by resetting the timestamp just ahead of now.
-            reminder.setStartTime(LocalDateTime.now().plusSeconds(1));
+            reminder.setStartTime(LocalDateTime.now(ZoneOffset.UTC).plusSeconds(1));
         } else {
             switch (recurrence) {
                 case DAILY -> reminder.setStartTime(reminder.getStartTime().plusDays(1));

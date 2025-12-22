@@ -25,6 +25,7 @@ public class TelegramWebhookController {
     private final TelegramBotService telegramBotService;
     private final ReminderService reminderService;
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private final DateTimeFormatter displayFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'");
 
     public TelegramWebhookController(TelegramBotService telegramBotService, ReminderService reminderService) {
         this.telegramBotService = telegramBotService;
@@ -110,7 +111,7 @@ public class TelegramWebhookController {
     private void createReminderFromText(Message message, String chatId, String text) {
         String[] parts = text.split(";", 4);
         if (parts.length < 3) {
-            telegramBotService.sendMessage(message.chat().id(), "Используйте формат: Заголовок; yyyy-MM-dd HH:mm; DAILY|WEEKLY|MONTHLY|ONCE; Описание",
+            telegramBotService.sendMessage(message.chat().id(), "Используйте формат: Заголовок; yyyy-MM-dd HH:mm (UTC); DAILY|WEEKLY|MONTHLY|ONCE; Описание",
                     telegramBotService.numericTimeKeyboard());
             return;
         }
@@ -126,7 +127,7 @@ public class TelegramWebhookController {
             reminderService.save(reminder);
             telegramBotService.sendMessage(message.chat().id(), "Напоминание сохранено: " + reminder.getTitle());
         } catch (DateTimeParseException | IllegalArgumentException ex) {
-            telegramBotService.sendMessage(message.chat().id(), "Ошибка разбора. Проверьте дату и тип повторения.",
+            telegramBotService.sendMessage(message.chat().id(), "Ошибка разбора. Проверьте дату (UTC) и тип повторения.",
                     telegramBotService.numericTimeKeyboard());
         }
     }
@@ -138,7 +139,7 @@ public class TelegramWebhookController {
                     .append(": ")
                     .append(reminder.getTitle())
                     .append(" => ")
-                    .append(reminder.getStartTime().format(formatter))
+                    .append(reminder.getStartTime().format(displayFormatter))
                     .append(" (" + reminder.getRecurrence() + ")\n");
         }
         return sb.toString();
