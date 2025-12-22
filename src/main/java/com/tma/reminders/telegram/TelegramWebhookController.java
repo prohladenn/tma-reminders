@@ -87,10 +87,14 @@ public class TelegramWebhookController {
             try {
                 Long reminderId = Long.parseLong(data.substring("complete:".length()));
                 String chatId = String.valueOf(callbackQuery.message().chat().id());
-                boolean completed = reminderService.completeReminder(reminderId, chatId);
-                if (completed) {
-                    telegramBotService.removeKeyboard(callbackQuery.message().chat().id(), callbackQuery.message().messageId());
-                    telegramBotService.sendMessage(callbackQuery.message().chat().id(), "Напоминание завершено");
+                var completion = reminderService.completeReminder(reminderId, chatId);
+                if (completion.completed()) {
+                    Integer messageId = completion.messageId() != null
+                            ? completion.messageId()
+                            : callbackQuery.message().messageId();
+                    if (messageId != null) {
+                        telegramBotService.editMessage(callbackQuery.message().chat().id(), messageId, completion.updatedText());
+                    }
                     telegramBotService.answerCallback(callbackQuery.id(), "Отмечено как выполнено");
                 } else {
                     telegramBotService.answerCallback(callbackQuery.id(), "Напоминание не найдено");
