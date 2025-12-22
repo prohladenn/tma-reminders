@@ -39,7 +39,7 @@ public class ReminderService {
         if (reminder.getChatId() == null || reminder.getChatId().isBlank()) {
             userSettingsService.getChatId().ifPresent(reminder::setChatId);
         }
-        reminder.setNextFireAt(reminder.getStartTime());
+        reminder.setNextAttemptAt(reminder.getStartTime());
         reminder.setSendAttempts(0);
         reminder.setLastSentAt(null);
         reminder.setLastSentMessageId(null);
@@ -64,7 +64,7 @@ public class ReminderService {
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         List<Reminder> dueReminders = repository.findDueReminders(now);
         for (Reminder reminder : dueReminders) {
-            initializeNextFireAt(reminder);
+            initializeNextAttemptAt(reminder);
             int attemptNumber = reminder.getSendAttempts() + 1;
             reminder.setSendAttempts(attemptNumber);
             Integer previousMessageId = reminder.getLastSentMessageId();
@@ -83,7 +83,7 @@ public class ReminderService {
                 handleSuccessfulSend(reminder, now, result, previousMessageId, isRetry);
             } else if (result.isNotFound()) {
                 reminder.setActive(false);
-                reminder.setNextFireAt(null);
+                reminder.setNextAttemptAt(null);
                 log.warn("Disabling reminder {} for chat {} because Telegram returned 404 ({}). Check that the bot is started and chat id is correct.",
                         reminder.getId(), reminder.getChatId(), result.description());
             } else {
@@ -117,7 +117,7 @@ public class ReminderService {
         if (hasUsedAllAttempts(reminder)) {
             scheduleAfterFinalAttempt(reminder);
         } else {
-            reminder.setNextFireAt(now.plus(RESEND_INTERVAL));
+            reminder.setNextAttemptAt(now.plus(RESEND_INTERVAL));
         }
     }
 
@@ -126,18 +126,18 @@ public class ReminderService {
             scheduleAfterFinalAttempt(reminder);
             log.warn("Reminder {} reached max attempts after failure ({}); moving forward.", reminder.getId(), description);
         } else {
-            reminder.setNextFireAt(now.plus(RESEND_INTERVAL));
+            reminder.setNextAttemptAt(now.plus(RESEND_INTERVAL));
             String descriptionWithRetryInfo = appendRetryInfo(description, reminder.getSendAttempts() + 1);
-            log.warn("Reminder {} will retry after failure ({}). Next attempt at {} UTC.", reminder.getId(), descriptionWithRetryInfo, reminder.getNextFireAt());
+            log.warn("Reminder {} will retry after failure ({}). Next attempt at {} UTC.", reminder.getId(), descriptionWithRetryInfo, reminder.getNextAttemptAt());
         }
     }
 
-    private void initializeNextFireAt(Reminder reminder) {
-        if (reminder.getNextFireAt() == null) {
+    private void initializeNextAttemptAt(Reminder reminder) {
+        if (reminder.getNextAttemptAt() == null) {
             if (reminder.getStartTime() == null) {
                 reminder.setStartTime(LocalDateTime.now(ZoneOffset.UTC));
             }
-            reminder.setNextFireAt(reminder.getStartTime());
+            reminder.setNextAttemptAt(reminder.getStartTime());
         }
     }
 
@@ -169,12 +169,12 @@ public class ReminderService {
         Recurrence recurrence = reminder.getRecurrence();
         if (recurrence == null || recurrence == Recurrence.ONCE) {
             reminder.setActive(false);
-            reminder.setNextFireAt(null);
+            reminder.setNextAttemptAt(null);
             return;
         }
 
         reminder.setStartTime(calculateNextStartTime(reminder));
-        reminder.setNextFireAt(reminder.getStartTime());
+        reminder.setNextAttemptAt(reminder.getStartTime());
         reminder.setSendAttempts(0);
         reminder.setLastSentAt(null);
         reminder.setLastSentMessageId(null);
@@ -183,10 +183,10 @@ public class ReminderService {
     private void handleCompletion(Reminder reminder) {
         if (reminder.getRecurrence() == null || reminder.getRecurrence() == Recurrence.ONCE) {
             reminder.setActive(false);
-            reminder.setNextFireAt(null);
+            reminder.setNextAttemptAt(null);
         } else {
             reminder.setStartTime(calculateNextStartTime(reminder));
-            reminder.setNextFireAt(reminder.getStartTime());
+            reminder.setNextAttemptAt(reminder.getStartTime());
             reminder.setSendAttempts(0);
             reminder.setLastSentAt(null);
             reminder.setLastSentMessageId(null);
