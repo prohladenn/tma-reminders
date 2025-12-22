@@ -117,7 +117,8 @@ public class ReminderService {
             log.warn("Reminder {} reached max attempts after failure ({}); moving to next occurrence.", reminder.getId(), description);
         } else {
             reminder.setNextAttemptAt(now.plus(RESEND_INTERVAL));
-            log.warn("Reminder {} will retry after failure ({}). Next attempt at {} UTC.", reminder.getId(), description, reminder.getNextAttemptAt());
+            String descriptionWithRetryInfo = appendRetryInfo(description, reminder.getSendAttempts() + 1);
+            log.warn("Reminder {} will retry after failure ({}). Next attempt at {} UTC.", reminder.getId(), descriptionWithRetryInfo, reminder.getNextAttemptAt());
         }
     }
 
@@ -159,5 +160,10 @@ public class ReminderService {
     }
 
     public record CompletionResult(boolean completed, Integer messageId, String updatedText) {
+    }
+
+    private String appendRetryInfo(String description, int retryNumber) {
+        String baseDescription = description == null ? "null" : description;
+        return "%s (retry %d of %d)".formatted(baseDescription, retryNumber, MAX_DELIVERY_ATTEMPTS);
     }
 }
