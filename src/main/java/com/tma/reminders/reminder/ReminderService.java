@@ -143,7 +143,7 @@ public class ReminderService {
         Recurrence recurrence = reminder.getRecurrence();
         if (recurrence == null || recurrence == Recurrence.ONCE) {
             reminder.setActive(false);
-            // Keep validation happy on completed reminders by resetting the timestamp just ahead of now.
+            // Move the timestamp forward to keep completed reminders out of due queries.
             reminder.setStartTime(LocalDateTime.now(ZoneOffset.UTC).plusSeconds(1));
         } else {
             switch (recurrence) {
