@@ -1,5 +1,6 @@
 package com.tma.reminders.telegram;
 
+import com.pengrad.telegrambot.model.CallbackQuery;
 import com.pengrad.telegrambot.model.Message;
 import com.pengrad.telegrambot.model.Update;
 import com.tma.reminders.reminder.Reminder;
@@ -33,9 +34,8 @@ public class TelegramWebhookController {
     @PostMapping
     public ResponseEntity<Void> onUpdate(@RequestBody Update update) {
         Message message = update.message();
-        if (message != null && message.text() != null) {
-            handleMessage(message);
-        }
+        handleMessage(message);
+        handleCallback(update.callbackQuery());
         return ResponseEntity.ok().build();
     }
 
@@ -46,14 +46,16 @@ public class TelegramWebhookController {
         if (updates != null) {
             updates.forEach(u -> {
                 Message message = u.message();
-                if (message != null && message.text() != null) {
-                    handleMessage(message);
-                }
+                handleMessage(message);
+                handleCallback(u.callbackQuery());
             });
         }
     }
 
     private void handleMessage(Message message) {
+        if (message == null || message.text() == null) {
+            return;
+        }
         String chatId = String.valueOf(message.chat().id());
         String text = message.text();
         if (text.startsWith("/list")) {
@@ -73,6 +75,31 @@ public class TelegramWebhookController {
             }
         } else {
             createReminderFromText(message, chatId, text);
+        }
+    }
+
+    private void handleCallback(CallbackQuery callbackQuery) {
+        if (callbackQuery == null || callbackQuery.data() == null || callbackQuery.message() == null) {
+            return;
+        }
+        String data = callbackQuery.data();
+        if (data.startsWith("complete:")) {
+            try {
+                Long reminderId = Long.parseLong(data.substring("complete:".length()));
+                String chatId = String.valueOf(callbackQuery.message().chat().id());
+                boolean completed = reminderService.completeReminder(reminderId, chatId);
+                if (completed) {
+                    telegramBotService.removeKeyboard(callbackQuery.message().chat().id(), callbackQuery.message().messageId());
+                    telegramBotService.sendMessage(callbackQuery.message().chat().id(), "Напоминание завершено");
+                    telegramBotService.answerCallback(callbackQuery.id(), "Отмечено как выполнено");
+                } else {
+                    telegramBotService.answerCallback(callbackQuery.id(), "Напоминание не найдено");
+                }
+            } catch (NumberFormatException ex) {
+                telegramBotService.answerCallback(callbackQuery.id(), "Некорректный идентификатор");
+            }
+        } else {
+            telegramBotService.answerCallback(callbackQuery.id(), "Неизвестное действие");
         }
     }
 
