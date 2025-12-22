@@ -13,8 +13,9 @@ import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.datetimepicker.DateTimePicker;
 import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.formlayout.FormLayout.ResponsiveStep;
-import com.vaadin.flow.component.grid.Grid;
-import com.vaadin.flow.component.grid.GridVariant;
+import com.vaadin.flow.component.html.Div;
+import com.vaadin.flow.component.html.Paragraph;
+import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
@@ -32,7 +33,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
 
 @Route("")
 @PageTitle("TMA Reminders")
@@ -45,9 +49,10 @@ public class MainView extends VerticalLayout {
     private final TelegramBotService telegramBotService;
     private final TelegramInitDataService telegramInitDataService;
     private final UserSettingsService userSettingsService;
-    private final Grid<Reminder> grid = new Grid<>(Reminder.class, false);
+    private final VerticalLayout remindersList = new VerticalLayout();
     private final Binder<Reminder> binder = new Binder<>(Reminder.class);
     private Reminder currentReminder;
+    private Div selectedCard;
     private final TextField chatIdField = new TextField("Telegram chat ID (получен из Telegram)");
 
     public MainView(ReminderService reminderService, TelegramBotService telegramBotService,
@@ -61,8 +66,8 @@ public class MainView extends VerticalLayout {
         setSpacing(true);
         setAlignItems(Alignment.STRETCH);
 
-        add(buildSettings(), buildGrid(), buildForm());
-        refreshGrid();
+        add(buildSettings(), buildRemindersSection(), buildForm());
+        refreshReminders();
         requestChatIdFromTelegram();
     }
 
@@ -87,19 +92,19 @@ public class MainView extends VerticalLayout {
         return settingsLayout;
     }
 
-    private Grid<Reminder> buildGrid() {
-        grid.addColumn(Reminder::getId).setHeader("ID").setAutoWidth(true).setFlexGrow(0);
-        grid.addColumn(Reminder::getChatId).setHeader("Chat ID").setAutoWidth(true).setFlexGrow(1);
-        grid.addColumn(Reminder::getTitle).setHeader("Title").setAutoWidth(true).setFlexGrow(1);
-        grid.addColumn(Reminder::getStartTime).setHeader("Next run").setAutoWidth(true).setFlexGrow(1);
-        grid.addColumn(Reminder::getRecurrence).setHeader("Recurrence").setAutoWidth(true).setFlexGrow(0);
-        grid.addColumn(Reminder::isActive).setHeader("Active").setAutoWidth(true).setFlexGrow(0);
-        grid.addThemeVariants(GridVariant.LUMO_ROW_STRIPES, GridVariant.LUMO_COMPACT);
-        grid.setWidthFull();
-        grid.setMaxHeight("60vh");
-        grid.setMinHeight("260px");
-        grid.addSelectionListener(event -> event.getFirstSelectedItem().ifPresent(this::editReminder));
-        return grid;
+    private VerticalLayout buildRemindersSection() {
+        remindersList.setPadding(false);
+        remindersList.setSpacing(true);
+        remindersList.setWidthFull();
+        remindersList.getStyle().set("gap", "var(--lumo-space-s)");
+        remindersList.getStyle().set("margin", "var(--lumo-space-s) 0");
+
+        VerticalLayout container = new VerticalLayout(remindersList);
+        container.setPadding(false);
+        container.setSpacing(false);
+        container.setWidthFull();
+        container.getStyle().set("gap", "var(--lumo-space-xs)");
+        return container;
     }
 
     private FormLayout buildForm() {
@@ -162,10 +167,79 @@ public class MainView extends VerticalLayout {
         binder.readBean(reminder);
     }
 
-    private void refreshGrid() {
-        grid.setItems(reminderService.findAll());
-        grid.deselectAll();
+    private void refreshReminders() {
+        remindersList.removeAll();
+        selectedCard = null;
+        List<Reminder> reminders = reminderService.findAll();
+
+        if (reminders.isEmpty()) {
+            Paragraph emptyState = new Paragraph("Напоминаний пока нет");
+            emptyState.getStyle().set("color", "var(--lumo-contrast-50pct)");
+            remindersList.add(emptyState);
+        } else {
+            reminders.stream()
+                    .sorted(Comparator.comparing(Reminder::getStartTime))
+                    .forEach(reminder -> remindersList.add(createReminderCard(reminder)));
+        }
+
         setCurrentReminder(new Reminder());
+    }
+
+    private Div createReminderCard(Reminder reminder) {
+        Div card = new Div();
+        card.addClassName("reminder-card");
+        card.getStyle().set("border", "1px solid var(--lumo-contrast-10pct)");
+        card.getStyle().set("border-radius", "12px");
+        card.getStyle().set("padding", "var(--lumo-space-m)");
+        card.getStyle().set("background", "var(--lumo-base-color)");
+        card.getStyle().set("box-shadow", "0 2px 4px 0 var(--lumo-shade-5pct)");
+        card.getStyle().set("cursor", "pointer");
+        card.getStyle().set("transition", "box-shadow 120ms ease, border-color 120ms ease");
+
+        Span title = new Span(reminder.getTitle());
+        title.getStyle().set("font-weight", "600");
+        title.getStyle().set("font-size", "var(--lumo-font-size-l)");
+
+        Span nextRun = new Span("⏰ " + formatDateTime(reminder.getStartTime()));
+        nextRun.getStyle().set("color", "var(--lumo-secondary-text-color)");
+
+        Span recurrence = new Span("🔁 " + reminder.getRecurrence().name());
+        recurrence.getStyle().set("color", "var(--lumo-secondary-text-color)");
+
+        Span active = new Span(reminder.isActive() ? "Активно" : "Выключено");
+        active.getStyle().set("color", reminder.isActive() ? "var(--lumo-success-text-color)" : "var(--lumo-error-text-color)");
+        active.getStyle().set("font-weight", "500");
+
+        Paragraph description = new Paragraph(reminder.getDescription() == null || reminder.getDescription().isBlank()
+                ? "Без описания"
+                : reminder.getDescription());
+        description.getStyle().set("margin", "var(--lumo-space-xs) 0");
+        description.getStyle().set("color", "var(--lumo-secondary-text-color)");
+
+        FlexLayout meta = new FlexLayout(nextRun, recurrence, active);
+        meta.setFlexWrap(FlexWrap.WRAP);
+        meta.setAlignItems(Alignment.CENTER);
+        meta.setJustifyContentMode(JustifyContentMode.START);
+        meta.setWidthFull();
+        meta.getStyle().set("gap", "var(--lumo-space-m)");
+        meta.getStyle().set("margin-top", "var(--lumo-space-xs)");
+
+        card.add(title, description, meta);
+        card.addClickListener(event -> selectReminder(reminder, card));
+        return card;
+    }
+
+    private void selectReminder(Reminder reminder, Div card) {
+        editReminder(reminder);
+
+        if (selectedCard != null) {
+            selectedCard.getStyle().remove("border-color");
+            selectedCard.getStyle().remove("box-shadow");
+        }
+
+        selectedCard = card;
+        selectedCard.getStyle().set("border-color", "var(--lumo-primary-color-50pct)");
+        selectedCard.getStyle().set("box-shadow", "0 4px 10px 0 var(--lumo-shade-10pct)");
     }
 
     private void saveReminder() {
@@ -182,7 +256,7 @@ public class MainView extends VerticalLayout {
             currentReminder.setChatId(chatId);
             reminderService.save(currentReminder);
             Notification.show("Reminder saved", 2000, Notification.Position.BOTTOM_CENTER);
-            refreshGrid();
+            refreshReminders();
         } else {
             Notification.show("Please fix validation errors", 2000, Notification.Position.BOTTOM_CENTER);
         }
@@ -192,7 +266,7 @@ public class MainView extends VerticalLayout {
         if (currentReminder != null && currentReminder.getId() != null) {
             reminderService.delete(currentReminder.getId());
             Notification.show("Reminder deleted", 2000, Notification.Position.BOTTOM_CENTER);
-            refreshGrid();
+            refreshReminders();
         }
     }
 
@@ -254,5 +328,12 @@ public class MainView extends VerticalLayout {
                         """,
                 getElement()
         );
+    }
+
+    private String formatDateTime(LocalDateTime dateTime) {
+        if (dateTime == null) {
+            return "";
+        }
+        return dateTime.format(DateTimeFormatter.ofPattern("dd MMM yyyy HH:mm"));
     }
 }
