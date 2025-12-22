@@ -9,6 +9,7 @@ import com.tma.reminders.user.UserSettingsService;
 import com.vaadin.flow.component.ClientCallable;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
+import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.datetimepicker.DateTimePicker;
 import com.vaadin.flow.component.formlayout.FormLayout;
@@ -32,6 +33,7 @@ import jakarta.annotation.security.PermitAll;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
@@ -54,6 +56,14 @@ public class MainView extends VerticalLayout {
     private Reminder currentReminder;
     private Div selectedCard;
     private final TextField chatIdField = new TextField("Telegram chat ID (получен из Telegram)");
+    private final TextField title = new TextField("Title");
+    private final TextArea description = new TextArea("Description");
+    private final DateTimePicker startTime = new DateTimePicker("Start time");
+    private final ComboBox<Recurrence> recurrence = new ComboBox<>("Recurrence");
+    private final Checkbox activeToggle = new Checkbox("Active");
+    private final Button save = new Button("Save", e -> saveReminder());
+    private final Button delete = new Button("Delete", e -> deleteReminder());
+    private final Button reset = new Button("Reset", e -> setCurrentReminder(new Reminder()));
 
     public MainView(ReminderService reminderService, TelegramBotService telegramBotService,
                     TelegramInitDataService telegramInitDataService, UserSettingsService userSettingsService) {
@@ -108,13 +118,11 @@ public class MainView extends VerticalLayout {
     }
 
     private FormLayout buildForm() {
-        TextField title = new TextField("Title");
         title.setWidthFull();
-        TextArea description = new TextArea("Description");
         description.setWidthFull();
-        DateTimePicker startTime = new DateTimePicker("Start time");
         startTime.setWidthFull();
-        ComboBox<Recurrence> recurrence = new ComboBox<>("Recurrence");
+        startTime.setStep(Duration.ofMinutes(5));
+        startTime.setHelperText("Выберите время сегодня или позже");
         recurrence.setWidthFull();
         recurrence.setItems(Arrays.asList(Recurrence.values()));
         recurrence.setItemLabelGenerator(Enum::name);
@@ -129,22 +137,24 @@ public class MainView extends VerticalLayout {
         binder.forField(recurrence)
                 .asRequired("Recurrence is required")
                 .bind(Reminder::getRecurrence, Reminder::setRecurrence);
+        binder.forField(activeToggle)
+                .bind(Reminder::isActive, Reminder::setActive);
 
-        Button save = new Button("Save", e -> saveReminder());
         save.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-        Button delete = new Button("Delete", e -> deleteReminder());
         delete.addThemeVariants(ButtonVariant.LUMO_ERROR);
-        Button reset = new Button("Reset", e -> setCurrentReminder(new Reminder()));
+        FlexLayout activeWrapper = new FlexLayout(activeToggle);
+        activeWrapper.setAlignItems(Alignment.CENTER);
 
-        FlexLayout actions = new FlexLayout(save, delete, reset);
+        FlexLayout actions = new FlexLayout(activeWrapper, save, delete, reset);
         actions.setFlexWrap(FlexWrap.WRAP);
         actions.setWidthFull();
         actions.setJustifyContentMode(JustifyContentMode.START);
         actions.setAlignItems(Alignment.STRETCH);
-        actions.setFlexGrow(1, save, delete, reset);
-        save.setMinWidth("140px");
-        delete.setMinWidth("140px");
-        reset.setMinWidth("140px");
+        actions.setFlexGrow(1, save, delete, reset, activeWrapper);
+        save.setMinWidth("120px");
+        delete.setMinWidth("120px");
+        reset.setMinWidth("120px");
+        activeWrapper.setMinWidth("160px");
         actions.getStyle().set("gap", "var(--lumo-space-s)");
 
         FormLayout formLayout = new FormLayout(title, startTime, recurrence, description, actions);
@@ -163,8 +173,9 @@ public class MainView extends VerticalLayout {
     }
 
     private void setCurrentReminder(Reminder reminder) {
-        this.currentReminder = reminder;
-        binder.readBean(reminder);
+        this.currentReminder = ensureDefaults(reminder);
+        binder.readBean(this.currentReminder);
+        updateEditingState(this.currentReminder);
     }
 
     private void refreshReminders() {
@@ -335,5 +346,28 @@ public class MainView extends VerticalLayout {
             return "";
         }
         return dateTime.format(DateTimeFormatter.ofPattern("dd MMM yyyy HH:mm"));
+    }
+
+    private Reminder ensureDefaults(Reminder reminder) {
+        if (reminder.getStartTime() == null) {
+            reminder.setStartTime(LocalDateTime.now().plusMinutes(5).withSecond(0).withNano(0));
+        }
+        if (reminder.getRecurrence() == null) {
+            reminder.setRecurrence(Recurrence.ONCE);
+        }
+        return reminder;
+    }
+
+    private void updateEditingState(Reminder reminder) {
+        boolean isPast = reminder.getStartTime() != null
+                && reminder.getStartTime().isBefore(LocalDateTime.now());
+        title.setReadOnly(isPast);
+        description.setReadOnly(isPast);
+        startTime.setReadOnly(isPast);
+        recurrence.setReadOnly(isPast);
+        activeToggle.setReadOnly(isPast);
+        save.setEnabled(!isPast);
+        activeToggle.setEnabled(!isPast);
+        startTime.setMin(isPast ? null : LocalDateTime.now());
     }
 }
