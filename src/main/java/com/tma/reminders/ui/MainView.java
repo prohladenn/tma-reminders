@@ -39,6 +39,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.time.ZoneOffset;
 
 @Route("")
 @PageTitle("TMA Reminders")
@@ -122,7 +124,8 @@ public class MainView extends VerticalLayout {
         description.setWidthFull();
         startTime.setWidthFull();
         startTime.setStep(Duration.ofMinutes(5));
-        startTime.setHelperText("Выберите время сегодня или позже");
+        startTime.setHelperText("Выберите время в UTC сегодня или позже");
+        startTime.setLocale(Locale.forLanguageTag("ru-RU"));
         recurrence.setWidthFull();
         recurrence.setItems(Arrays.asList(Recurrence.values()));
         recurrence.setItemLabelGenerator(Enum::name);
@@ -131,7 +134,7 @@ public class MainView extends VerticalLayout {
         binder.forField(description).bind(Reminder::getDescription, Reminder::setDescription);
         binder.forField(startTime)
                 .asRequired("Start time is required")
-                .withValidator(time -> time != null && (time.isAfter(LocalDateTime.now()) || time.isEqual(LocalDateTime.now())),
+                .withValidator(time -> time != null && (time.isAfter(LocalDateTime.now(ZoneOffset.UTC)) || time.isEqual(LocalDateTime.now(ZoneOffset.UTC))),
                         "Time must be in the future")
                 .bind(Reminder::getStartTime, Reminder::setStartTime);
         binder.forField(recurrence)
@@ -345,12 +348,12 @@ public class MainView extends VerticalLayout {
         if (dateTime == null) {
             return "";
         }
-        return dateTime.format(DateTimeFormatter.ofPattern("dd MMM yyyy HH:mm"));
+        return dateTime.atOffset(ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("dd MMM yyyy HH:mm 'UTC'"));
     }
 
     private Reminder ensureDefaults(Reminder reminder) {
         if (reminder.getStartTime() == null) {
-            reminder.setStartTime(LocalDateTime.now().plusMinutes(5).withSecond(0).withNano(0));
+            reminder.setStartTime(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(5).withSecond(0).withNano(0));
         }
         if (reminder.getRecurrence() == null) {
             reminder.setRecurrence(Recurrence.ONCE);
@@ -360,7 +363,7 @@ public class MainView extends VerticalLayout {
 
     private void updateEditingState(Reminder reminder) {
         boolean isPast = reminder.getStartTime() != null
-                && reminder.getStartTime().isBefore(LocalDateTime.now());
+                && reminder.getStartTime().isBefore(LocalDateTime.now(ZoneOffset.UTC));
         title.setReadOnly(isPast);
         description.setReadOnly(isPast);
         startTime.setReadOnly(isPast);
@@ -368,6 +371,6 @@ public class MainView extends VerticalLayout {
         activeToggle.setReadOnly(isPast);
         save.setEnabled(!isPast);
         activeToggle.setEnabled(!isPast);
-        startTime.setMin(isPast ? null : LocalDateTime.now());
+        startTime.setMin(isPast ? null : LocalDateTime.now(ZoneOffset.UTC));
     }
 }

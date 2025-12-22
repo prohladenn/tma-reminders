@@ -4,6 +4,7 @@ import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 public class FutureOrPresentWhenActiveValidator implements ConstraintValidator<FutureOrPresentWhenActive, Reminder> {
 
@@ -16,6 +17,6 @@ public class FutureOrPresentWhenActiveValidator implements ConstraintValidator<F
             return true;
         }
         LocalDateTime startTime = reminder.getStartTime();
-        return startTime != null && !startTime.isBefore(LocalDateTime.now());
+        return startTime != null && !startTime.isBefore(LocalDateTime.now(ZoneOffset.UTC));
     }
 }
