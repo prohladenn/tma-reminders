@@ -1,5 +1,7 @@
 package com.tma.reminders.reminder;
 
+import com.pengrad.telegrambot.model.request.InlineKeyboardButton;
+import com.pengrad.telegrambot.model.request.InlineKeyboardMarkup;
 import com.tma.reminders.telegram.TelegramBotService;
 import com.tma.reminders.telegram.TelegramBotService.SendResult;
 import com.tma.reminders.user.UserSettingsService;
@@ -53,7 +55,8 @@ public class ReminderService {
         LocalDateTime now = LocalDateTime.now();
         List<Reminder> dueReminders = repository.findDueReminders(now);
         for (Reminder reminder : dueReminders) {
-            SendResult result = telegramBotService.sendMessage(Long.valueOf(reminder.getChatId()), formatMessage(reminder));
+            SendResult result = telegramBotService.sendMessage(Long.valueOf(reminder.getChatId()), formatMessage(reminder),
+                    completedKeyboard(reminder));
             if (result.isSuccess()) {
                 processRecurrence(reminder);
             } else if (result.isNotFound()) {
@@ -67,9 +70,27 @@ public class ReminderService {
         }
     }
 
+    @Transactional
+    public boolean completeReminder(Long reminderId, String chatId) {
+        return repository.findById(reminderId)
+                .filter(reminder -> reminder.getChatId().equals(chatId))
+                .map(reminder -> {
+                    reminder.setActive(false);
+                    reminder.setStartTime(LocalDateTime.now().plusSeconds(1));
+                    return true;
+                })
+                .orElse(false);
+    }
+
     private String formatMessage(Reminder reminder) {
         String description = reminder.getDescription();
         return "\u23f0 " + reminder.getTitle() + (description != null && !description.isBlank() ? "\n" + description : "");
+    }
+
+    private InlineKeyboardMarkup completedKeyboard(Reminder reminder) {
+        return new InlineKeyboardMarkup(
+                new InlineKeyboardButton("\u2705 Completed").callbackData("complete:" + reminder.getId())
+        );
     }
 
     private void processRecurrence(Reminder reminder) {
