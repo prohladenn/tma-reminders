@@ -66,8 +66,16 @@ public class ReminderService {
             normalizeNextAttempt(reminder);
             Integer previousMessageId = reminder.getLastSentMessageId();
             boolean isRetry = reminder.getSendAttempts() > 0;
-            SendResult result = telegramBotService.sendMessage(Long.valueOf(reminder.getChatId()), formatMessage(reminder, false),
-                    completedKeyboard(reminder));
+            SendResult result;
+            try {
+                result = telegramBotService.sendMessage(Long.valueOf(reminder.getChatId()), formatMessage(reminder, false),
+                        completedKeyboard(reminder));
+            } catch (Exception ex) {
+                log.error("Failed to send reminder {} to chat {} because of an exception; scheduling retry.",
+                        reminder.getId(), reminder.getChatId(), ex);
+                handleFailedSend(reminder, now, ex.getMessage());
+                continue;
+            }
             if (result.isSuccess()) {
                 handleSuccessfulSend(reminder, now, result, previousMessageId, isRetry);
             } else if (result.isNotFound()) {
@@ -96,18 +104,13 @@ public class ReminderService {
     private void handleSuccessfulSend(Reminder reminder, LocalDateTime now, SendResult result,
                                       Integer previousMessageId, boolean isRetry) {
         reminder.setLastSentAt(now);
-        reminder.setSendAttempts(reminder.getSendAttempts() + 1);
         reminder.setLastSentMessageId(result.messageId());
-
-        if (reminder.getSendAttempts() >= MAX_DELIVERY_ATTEMPTS) {
-            scheduleNextOccurrence(reminder);
-        } else {
-            reminder.setNextAttemptAt(now.plus(RESEND_INTERVAL));
-        }
 
         if (isRetry && previousMessageId != null && result.messageId() != null && !previousMessageId.equals(result.messageId())) {
             telegramBotService.deleteMessage(Long.valueOf(reminder.getChatId()), previousMessageId);
         }
+
+        scheduleNextOccurrence(reminder);
     }
 
     private void handleFailedSend(Reminder reminder, LocalDateTime now, String description) {
@@ -155,7 +158,6 @@ public class ReminderService {
             }
         }
         reminder.setNextAttemptAt(reminder.getStartTime());
-        reminder.setLastSentAt(null);
         reminder.setSendAttempts(0);
     }
 
