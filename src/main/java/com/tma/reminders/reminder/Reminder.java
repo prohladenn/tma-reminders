@@ -27,6 +27,14 @@ public class Reminder {
     @FutureOrPresent
     private LocalDateTime startTime;
 
+    private LocalDateTime nextAttemptAt;
+
+    private LocalDateTime lastSentAt;
+
+    private Integer lastSentMessageId;
+
+    private int sendAttempts;
+
     @Enumerated(EnumType.STRING)
     @Column(length = 20)
     private Recurrence recurrence;
@@ -71,6 +79,38 @@ public class Reminder {
 
     public void setStartTime(LocalDateTime startTime) {
         this.startTime = startTime;
+    }
+
+    public LocalDateTime getNextAttemptAt() {
+        return nextAttemptAt;
+    }
+
+    public void setNextAttemptAt(LocalDateTime nextAttemptAt) {
+        this.nextAttemptAt = nextAttemptAt;
+    }
+
+    public LocalDateTime getLastSentAt() {
+        return lastSentAt;
+    }
+
+    public void setLastSentAt(LocalDateTime lastSentAt) {
+        this.lastSentAt = lastSentAt;
+    }
+
+    public Integer getLastSentMessageId() {
+        return lastSentMessageId;
+    }
+
+    public void setLastSentMessageId(Integer lastSentMessageId) {
+        this.lastSentMessageId = lastSentMessageId;
+    }
+
+    public int getSendAttempts() {
+        return sendAttempts;
+    }
+
+    public void setSendAttempts(int sendAttempts) {
+        this.sendAttempts = sendAttempts;
     }
 
     public Recurrence getRecurrence() {
