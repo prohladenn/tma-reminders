@@ -3,6 +3,8 @@ package com.tma.reminders.telegram;
 import com.pengrad.telegrambot.TelegramBot;
 import com.pengrad.telegrambot.model.Update;
 import com.pengrad.telegrambot.model.request.InlineKeyboardMarkup;
+import com.pengrad.telegrambot.model.request.Keyboard;
+import com.pengrad.telegrambot.model.request.ReplyKeyboardMarkup;
 import com.pengrad.telegrambot.request.AnswerCallbackQuery;
 import com.pengrad.telegrambot.request.DeleteMessage;
 import com.pengrad.telegrambot.request.EditMessageReplyMarkup;
@@ -35,7 +37,7 @@ public class TelegramBotService {
         return sendMessage(chatId, text, null);
     }
 
-    public SendResult sendMessage(Long chatId, String text, InlineKeyboardMarkup keyboard) {
+    public SendResult sendMessage(Long chatId, String text, Keyboard keyboard) {
         if (chatId == null) {
             return SendResult.error(null, "Chat ID is not configured");
         }
@@ -96,6 +98,15 @@ public class TelegramBotService {
             log.warn("Failed to answer callback query {} (errorCode={}, description={})",
                     callbackQueryId, response.errorCode(), response.description());
         }
+    }
+
+    public ReplyKeyboardMarkup numericTimeKeyboard() {
+        return new ReplyKeyboardMarkup(
+                new String[]{"1", "2", "3"},
+                new String[]{"4", "5", "6"},
+                new String[]{"7", "8", "9"},
+                new String[]{"00", "0", ":"}
+        ).oneTimeKeyboard(true).resizeKeyboard(true);
     }
 
     public record SendResult(boolean success, Integer errorCode, String description, Integer messageId) {
