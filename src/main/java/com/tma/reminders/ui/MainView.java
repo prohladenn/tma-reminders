@@ -331,7 +331,22 @@ public class MainView extends VerticalLayout {
         activePill.getStyle().set("color",
                 reminder.isActive() ? "var(--lumo-success-text-color)" : "var(--lumo-error-text-color)");
 
-        FlexLayout header = new FlexLayout(title, activePill);
+        Checkbox quickToggle = new Checkbox();
+        quickToggle.setValue(reminder.isActive());
+        quickToggle.getElement().getThemeList().addAll(List.of("toggle", "small"));
+        quickToggle.getElement().addEventListener("click", event -> event.stopPropagation());
+        quickToggle.addValueChangeListener(event -> {
+            reminder.setActive(event.getValue());
+            reminderService.save(reminder);
+            refreshReminders();
+        });
+
+        HorizontalLayout statusControls = new HorizontalLayout(activePill, quickToggle);
+        statusControls.setAlignItems(Alignment.CENTER);
+        statusControls.setSpacing(true);
+        statusControls.getStyle().set("gap", "var(--lumo-space-xs)");
+
+        FlexLayout header = new FlexLayout(title, statusControls);
         header.setWidthFull();
         header.setAlignItems(Alignment.CENTER);
         header.setJustifyContentMode(JustifyContentMode.BETWEEN);
