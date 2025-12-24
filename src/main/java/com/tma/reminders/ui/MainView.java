@@ -16,6 +16,7 @@ import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.formlayout.FormLayout.ResponsiveStep;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
+import com.vaadin.flow.component.html.Hr;
 import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.html.Paragraph;
@@ -63,16 +64,17 @@ public class MainView extends VerticalLayout {
     private final Binder<Reminder> binder = new Binder<>(Reminder.class);
     private Reminder currentReminder;
     private Div selectedCard;
-    private final TextField title = new TextField("Title");
-    private final TextArea description = new TextArea("Description");
-    private final DateTimePicker startTime = new DateTimePicker("Start time");
-    private final ComboBox<Recurrence> recurrence = new ComboBox<>("Recurrence");
-    private final Checkbox activeToggle = new Checkbox("Active");
-    private final Button save = new Button("Save", e -> saveReminder());
-    private final Button delete = new Button("Delete", e -> deleteReminder());
-    private final Button reset = new Button("Reset", e -> setCurrentReminder(new Reminder()));
-    private final Button newReminderButton = new Button("+ New reminder", e -> startNewReminder());
+    private final TextField title = new TextField("Название");
+    private final TextArea description = new TextArea("Описание");
+    private final DateTimePicker startTime = new DateTimePicker("Время");
+    private final ComboBox<Recurrence> recurrence = new ComboBox<>("Повторение");
+    private final Checkbox activeToggle = new Checkbox("Активно");
+    private final Button save = new Button("Сохранить", e -> saveReminder());
+    private final Button delete = new Button("Удалить", e -> openDeleteConfirm());
+    private final Button reset = new Button("Сбросить", e -> setCurrentReminder(new Reminder()));
+    private final Button newReminderButton = new Button("+ Новое напоминание", e -> startNewReminder());
     private final Dialog reminderDialog = new Dialog();
+    private final Dialog deleteDialog = new Dialog();
     private UserSettings currentSettings;
 
     public MainView(ReminderService reminderService, TelegramInitDataService telegramInitDataService,
@@ -86,7 +88,7 @@ public class MainView extends VerticalLayout {
         setSpacing(true);
         setAlignItems(Alignment.STRETCH);
 
-        add(buildHeader(), buildRemindersSection(), buildReminderDialog());
+        add(buildHeader(), buildRemindersSection(), buildReminderDialog(), buildDeleteDialog());
         refreshReminders();
         requestChatIdFromTelegram();
     }
@@ -133,7 +135,7 @@ public class MainView extends VerticalLayout {
     }
 
     private Dialog buildReminderDialog() {
-        reminderDialog.setHeaderTitle("New reminder");
+        reminderDialog.setHeaderTitle("Новое напоминание");
         reminderDialog.setModal(true);
         reminderDialog.setDraggable(true);
         reminderDialog.setResizable(true);
@@ -181,8 +183,12 @@ public class MainView extends VerticalLayout {
         activeWrapper.setMinWidth("160px");
         actions.getStyle().set("gap", "var(--lumo-space-s)");
 
-        FormLayout formLayout = new FormLayout(title, startTime, recurrence, description, actions);
+        Hr divider = new Hr();
+        divider.getStyle().set("margin", "var(--lumo-space-s) 0");
+
+        FormLayout formLayout = new FormLayout(title, startTime, recurrence, description, divider, actions);
         formLayout.setColspan(description, 2);
+        formLayout.setColspan(divider, 2);
         formLayout.setColspan(actions, 2);
         formLayout.setWidthFull();
         formLayout.setResponsiveSteps(
@@ -194,7 +200,7 @@ public class MainView extends VerticalLayout {
 
     private void editReminder(Reminder reminder) {
         setCurrentReminder(reminder);
-        openReminderDialog("Edit reminder");
+        openReminderDialog("Редактировать напоминание");
     }
 
     private void setCurrentReminder(Reminder reminder) {
@@ -206,7 +212,7 @@ public class MainView extends VerticalLayout {
     private void startNewReminder() {
         clearSelectedCard();
         setCurrentReminder(new Reminder());
-        openReminderDialog("New reminder");
+        openReminderDialog("Новое напоминание");
     }
 
     private void refreshReminders() {
@@ -217,7 +223,13 @@ public class MainView extends VerticalLayout {
         if (reminders.isEmpty()) {
             Paragraph emptyState = new Paragraph("Напоминаний пока нет");
             emptyState.getStyle().set("color", "var(--lumo-contrast-50pct)");
-            remindersList.add(emptyState);
+            Button createFirst = new Button("Создать напоминание", event -> startNewReminder());
+            createFirst.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+            FlexLayout emptyLayout = new FlexLayout(emptyState, createFirst);
+            emptyLayout.setFlexDirection(FlexLayout.FlexDirection.COLUMN);
+            emptyLayout.setAlignItems(Alignment.START);
+            emptyLayout.getStyle().set("gap", "var(--lumo-space-xs)");
+            remindersList.add(emptyLayout);
         } else {
             reminders.stream()
                     .sorted(Comparator.comparing(Reminder::getStartTime))
@@ -255,6 +267,7 @@ public class MainView extends VerticalLayout {
         Checkbox quickToggle = new Checkbox();
         quickToggle.setValue(reminder.isActive());
         quickToggle.getElement().getThemeList().addAll(List.of("toggle", "small"));
+        quickToggle.getElement().setProperty("aria-label", "Включить напоминание");
         quickToggle.getElement().executeJs("this.addEventListener('click', e => e.stopPropagation())");
         quickToggle.addValueChangeListener(event -> {
             reminder.setActive(event.getValue());
@@ -345,21 +358,36 @@ public class MainView extends VerticalLayout {
             }
             currentReminder.setChatId(chatId);
             reminderService.save(currentReminder);
-            Notification.show("Reminder saved", 2000, Notification.Position.BOTTOM_CENTER);
+            Notification.show("Напоминание сохранено", 2000, Notification.Position.BOTTOM_CENTER);
             refreshReminders();
             reminderDialog.close();
         } else {
-            Notification.show("Please fix validation errors", 2000, Notification.Position.BOTTOM_CENTER);
+            Notification.show("Проверьте обязательные поля", 2000, Notification.Position.BOTTOM_CENTER);
         }
     }
 
-    private void deleteReminder() {
-        if (currentReminder != null && currentReminder.getId() != null) {
+    private void openDeleteConfirm() {
+        if (currentReminder == null || currentReminder.getId() == null) {
+            return;
+        }
+        deleteDialog.open();
+    }
+
+    private Dialog buildDeleteDialog() {
+        deleteDialog.setHeaderTitle("Удалить напоминание?");
+        Paragraph message = new Paragraph("Это действие нельзя отменить.");
+        Button confirm = new Button("Удалить", event -> {
             reminderService.delete(currentReminder.getId());
-            Notification.show("Reminder deleted", 2000, Notification.Position.BOTTOM_CENTER);
+            Notification.show("Напоминание удалено", 2000, Notification.Position.BOTTOM_CENTER);
             refreshReminders();
             reminderDialog.close();
-        }
+            deleteDialog.close();
+        });
+        confirm.addThemeVariants(ButtonVariant.LUMO_ERROR, ButtonVariant.LUMO_PRIMARY);
+        Button cancel = new Button("Отмена", event -> deleteDialog.close());
+        deleteDialog.add(message);
+        deleteDialog.getFooter().add(cancel, confirm);
+        return deleteDialog;
     }
 
     @ClientCallable
@@ -433,6 +461,7 @@ public class MainView extends VerticalLayout {
         activeToggle.setReadOnly(false);
         save.setEnabled(true);
         activeToggle.setEnabled(true);
+        delete.setEnabled(reminder != null && reminder.getId() != null);
         startTime.setMin(null);
     }
 

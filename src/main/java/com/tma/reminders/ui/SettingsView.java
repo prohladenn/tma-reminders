@@ -37,7 +37,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 @Route("settings")
-@PageTitle("Settings")
+@PageTitle("Настройки")
 @PermitAll
 public class SettingsView extends VerticalLayout {
 
@@ -47,11 +47,11 @@ public class SettingsView extends VerticalLayout {
     private final TelegramInitDataService telegramInitDataService;
     private final UserSettingsService userSettingsService;
     private final TextField chatIdField = new TextField("Telegram chat ID (получен из Telegram)");
-    private final ComboBox<ZoneId> timeZoneField = new ComboBox<>("Time zone");
-    private final IntegerField maxRetryCountField = new IntegerField("Max retries");
-    private final TimePicker quietHoursStartField = new TimePicker("Quiet hours start");
-    private final TimePicker quietHoursEndField = new TimePicker("Quiet hours end");
-    private final ComboBox<Locale> localeField = new ComboBox<>("Locale");
+    private final ComboBox<ZoneId> timeZoneField = new ComboBox<>("Часовой пояс");
+    private final IntegerField maxRetryCountField = new IntegerField("Макс. повторов");
+    private final TimePicker quietHoursStartField = new TimePicker("Тихие часы: начало");
+    private final TimePicker quietHoursEndField = new TimePicker("Тихие часы: конец");
+    private final ComboBox<Locale> localeField = new ComboBox<>("Язык");
     private UserSettings currentSettings;
     private boolean applyingSettings;
 
@@ -73,9 +73,9 @@ public class SettingsView extends VerticalLayout {
         Button backButton = new Button(new Icon(VaadinIcon.ARROW_LEFT),
                 event -> getUI().ifPresent(ui -> ui.navigate(MainView.class)));
         backButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
-        backButton.getElement().setProperty("title", "Back to reminders");
+        backButton.getElement().setProperty("title", "Назад к напоминаниям");
 
-        H2 title = new H2("Settings");
+        H2 title = new H2("Настройки");
         title.getStyle().set("margin", "0");
 
         HorizontalLayout header = new HorizontalLayout(backButton, title);
@@ -175,6 +175,7 @@ public class SettingsView extends VerticalLayout {
         currentSettings = userSettingsService.updateSettings(currentSettings);
         localeField.setItems(buildLocaleOptions(currentSettings));
         applySettingsToFields(currentSettings);
+        Notification.show("Настройки сохранены", 1500, Notification.Position.BOTTOM_CENTER);
     }
 
     private void applySettingsToFields(UserSettings settings) {
