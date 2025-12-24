@@ -16,6 +16,7 @@ import com.vaadin.flow.component.datetimepicker.DateTimePicker;
 import com.vaadin.flow.component.formlayout.FormLayout;
 import com.vaadin.flow.component.formlayout.FormLayout.ResponsiveStep;
 import com.vaadin.flow.component.html.Div;
+import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.component.notification.Notification;
@@ -24,12 +25,14 @@ import com.vaadin.flow.component.orderedlayout.FlexComponent.Alignment;
 import com.vaadin.flow.component.orderedlayout.FlexComponent.JustifyContentMode;
 import com.vaadin.flow.component.orderedlayout.FlexLayout;
 import com.vaadin.flow.component.orderedlayout.FlexLayout.FlexWrap;
+import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.IntegerField;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.timepicker.TimePicker;
 import com.vaadin.flow.data.binder.Binder;
+import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
 import jakarta.annotation.security.PermitAll;
@@ -78,6 +81,8 @@ public class MainView extends VerticalLayout {
     private final Button save = new Button("Save", e -> saveReminder());
     private final Button delete = new Button("Delete", e -> deleteReminder());
     private final Button reset = new Button("Reset", e -> setCurrentReminder(new Reminder()));
+    private final Button newReminderButton = new Button("+ New reminder", e -> startNewReminder());
+    private final Dialog reminderDialog = new Dialog();
     private UserSettings currentSettings;
     private boolean applyingSettings;
 
@@ -92,7 +97,7 @@ public class MainView extends VerticalLayout {
         setSpacing(true);
         setAlignItems(Alignment.STRETCH);
 
-        add(buildSettings(), buildRemindersSection(), buildForm());
+        add(buildSettings(), buildRemindersSection(), buildReminderDialog());
         refreshReminders();
         requestChatIdFromTelegram();
     }
@@ -182,18 +187,38 @@ public class MainView extends VerticalLayout {
     }
 
     private VerticalLayout buildRemindersSection() {
+        H2 title = new H2("Reminders");
+        title.getStyle().set("margin", "0");
+
+        newReminderButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+
+        HorizontalLayout header = new HorizontalLayout(title, newReminderButton);
+        header.setWidthFull();
+        header.setAlignItems(Alignment.CENTER);
+        header.setJustifyContentMode(JustifyContentMode.BETWEEN);
+
         remindersList.setPadding(false);
         remindersList.setSpacing(true);
         remindersList.setWidthFull();
         remindersList.getStyle().set("gap", "var(--lumo-space-s)");
         remindersList.getStyle().set("margin", "var(--lumo-space-s) 0");
 
-        VerticalLayout container = new VerticalLayout(remindersList);
+        VerticalLayout container = new VerticalLayout(header, remindersList);
         container.setPadding(false);
         container.setSpacing(false);
         container.setWidthFull();
         container.getStyle().set("gap", "var(--lumo-space-xs)");
         return container;
+    }
+
+    private Dialog buildReminderDialog() {
+        reminderDialog.setHeaderTitle("New reminder");
+        reminderDialog.setModal(true);
+        reminderDialog.setDraggable(true);
+        reminderDialog.setResizable(true);
+        reminderDialog.add(buildForm());
+        reminderDialog.setWidth("720px");
+        return reminderDialog;
     }
 
     private FormLayout buildForm() {
@@ -248,12 +273,19 @@ public class MainView extends VerticalLayout {
 
     private void editReminder(Reminder reminder) {
         setCurrentReminder(reminder);
+        openReminderDialog("Edit reminder");
     }
 
     private void setCurrentReminder(Reminder reminder) {
         this.currentReminder = ensureDefaults(reminder);
         binder.readBean(this.currentReminder);
         updateEditingState(this.currentReminder);
+    }
+
+    private void startNewReminder() {
+        clearSelectedCard();
+        setCurrentReminder(new Reminder());
+        openReminderDialog("New reminder");
     }
 
     private void refreshReminders() {
@@ -346,6 +378,7 @@ public class MainView extends VerticalLayout {
             reminderService.save(currentReminder);
             Notification.show("Reminder saved", 2000, Notification.Position.BOTTOM_CENTER);
             refreshReminders();
+            reminderDialog.close();
         } else {
             Notification.show("Please fix validation errors", 2000, Notification.Position.BOTTOM_CENTER);
         }
@@ -356,6 +389,7 @@ public class MainView extends VerticalLayout {
             reminderService.delete(currentReminder.getId());
             Notification.show("Reminder deleted", 2000, Notification.Position.BOTTOM_CENTER);
             refreshReminders();
+            reminderDialog.close();
         }
     }
 
@@ -489,6 +523,19 @@ public class MainView extends VerticalLayout {
         save.setEnabled(true);
         activeToggle.setEnabled(true);
         startTime.setMin(null);
+    }
+
+    private void openReminderDialog(String title) {
+        reminderDialog.setHeaderTitle(title);
+        reminderDialog.open();
+    }
+
+    private void clearSelectedCard() {
+        if (selectedCard != null) {
+            selectedCard.getStyle().remove("border-color");
+            selectedCard.getStyle().remove("box-shadow");
+            selectedCard = null;
+        }
     }
 
     private ZoneId getUserZoneId() {
