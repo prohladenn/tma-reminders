@@ -1,11 +1,13 @@
 package com.tma.reminders.ui;
 
+import com.tma.reminders.i18n.MessageService;
 import com.tma.reminders.reminder.Recurrence;
 import com.tma.reminders.reminder.Reminder;
 import com.tma.reminders.reminder.ReminderService;
 import com.tma.reminders.telegram.TelegramInitDataService;
 import com.tma.reminders.user.UserSettings;
 import com.tma.reminders.user.UserSettingsService;
+import com.vaadin.flow.component.AttachEvent;
 import com.vaadin.flow.component.ClientCallable;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -60,28 +62,32 @@ public class MainView extends VerticalLayout {
     private final ReminderService reminderService;
     private final TelegramInitDataService telegramInitDataService;
     private final UserSettingsService userSettingsService;
+    private final MessageService messageService;
     private final VerticalLayout remindersList = new VerticalLayout();
     private final Binder<Reminder> binder = new Binder<>(Reminder.class);
     private Reminder currentReminder;
     private Div selectedCard;
-    private final TextField title = new TextField("Название");
-    private final TextArea description = new TextArea("Описание");
-    private final DateTimePicker startTime = new DateTimePicker("Время");
-    private final ComboBox<Recurrence> recurrence = new ComboBox<>("Повторение");
-    private final Checkbox activeToggle = new Checkbox("Активно");
-    private final Button save = new Button("Сохранить", e -> saveReminder());
-    private final Button delete = new Button("Удалить", e -> openDeleteConfirm());
-    private final Button reset = new Button("Сбросить", e -> setCurrentReminder(new Reminder()));
-    private final Button newReminderButton = new Button("+ Новое напоминание", e -> startNewReminder());
+    private final TextField title = new TextField();
+    private final TextArea description = new TextArea();
+    private final DateTimePicker startTime = new DateTimePicker();
+    private final ComboBox<Recurrence> recurrence = new ComboBox<>();
+    private final Checkbox activeToggle = new Checkbox();
+    private final Button save = new Button(e -> saveReminder());
+    private final Button delete = new Button(e -> openDeleteConfirm());
+    private final Button reset = new Button(e -> setCurrentReminder(new Reminder()));
+    private final Button newReminderButton = new Button(e -> startNewReminder());
     private final Dialog reminderDialog = new Dialog();
     private final Dialog deleteDialog = new Dialog();
     private UserSettings currentSettings;
+    private H2 headerTitle;
+    private H2 remindersTitle;
 
     public MainView(ReminderService reminderService, TelegramInitDataService telegramInitDataService,
-                    UserSettingsService userSettingsService) {
+                    UserSettingsService userSettingsService, MessageService messageService) {
         this.reminderService = reminderService;
         this.telegramInitDataService = telegramInitDataService;
         this.userSettingsService = userSettingsService;
+        this.messageService = messageService;
         this.currentSettings = userSettingsService.getSettings();
         setSizeFull();
         setPadding(true);
@@ -93,29 +99,36 @@ public class MainView extends VerticalLayout {
         requestChatIdFromTelegram();
     }
 
+    @Override
+    protected void onAttach(AttachEvent attachEvent) {
+        super.onAttach(attachEvent);
+        attachEvent.getUI().getPage().setTitle(messageService.get(getUserLocale(), "app.title"));
+    }
+
     private HorizontalLayout buildHeader() {
-        H2 title = new H2("TMA Reminders");
-        title.getStyle().set("margin", "0");
+        headerTitle = new H2();
+        headerTitle.getStyle().set("margin", "0");
 
         Button settingsButton = new Button(new Icon(VaadinIcon.COG), event -> getUI()
                 .ifPresent(ui -> ui.navigate(SettingsView.class)));
         settingsButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
-        settingsButton.getElement().setProperty("title", "Settings");
+        settingsButton.getElement().setProperty("title", messageService.get(getUserLocale(), "button.settings"));
 
-        HorizontalLayout header = new HorizontalLayout(title, settingsButton);
+        HorizontalLayout header = new HorizontalLayout(headerTitle, settingsButton);
         header.setWidthFull();
         header.setAlignItems(Alignment.CENTER);
         header.setJustifyContentMode(JustifyContentMode.BETWEEN);
+        updateLabels();
         return header;
     }
 
     private VerticalLayout buildRemindersSection() {
-        H2 title = new H2("Reminders");
-        title.getStyle().set("margin", "0");
+        remindersTitle = new H2();
+        remindersTitle.getStyle().set("margin", "0");
 
         newReminderButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
 
-        HorizontalLayout header = new HorizontalLayout(title, newReminderButton);
+        HorizontalLayout header = new HorizontalLayout(remindersTitle, newReminderButton);
         header.setWidthFull();
         header.setAlignItems(Alignment.CENTER);
         header.setJustifyContentMode(JustifyContentMode.BETWEEN);
@@ -135,7 +148,7 @@ public class MainView extends VerticalLayout {
     }
 
     private Dialog buildReminderDialog() {
-        reminderDialog.setHeaderTitle("Новое напоминание");
+        reminderDialog.setHeaderTitle(messageService.get(getUserLocale(), "dialog.newReminder"));
         reminderDialog.setModal(true);
         reminderDialog.setDraggable(true);
         reminderDialog.setResizable(true);
@@ -145,6 +158,7 @@ public class MainView extends VerticalLayout {
     }
 
     private FormLayout buildForm() {
+        updateLabels();
         title.setWidthFull();
         description.setWidthFull();
         startTime.setWidthFull();
@@ -152,16 +166,19 @@ public class MainView extends VerticalLayout {
         updateDateTimeUiSettings();
         recurrence.setWidthFull();
         recurrence.setItems(Arrays.asList(Recurrence.values()));
-        recurrence.setItemLabelGenerator(Enum::name);
+        recurrence.setItemLabelGenerator(value -> messageService.get(getUserLocale(),
+                "recurrence." + value.name().toLowerCase(Locale.ROOT)));
 
-        binder.forField(title).asRequired("Title is required").bind(Reminder::getTitle, Reminder::setTitle);
+        binder.forField(title)
+                .asRequired(messageService.get(getUserLocale(), "validation.titleRequired"))
+                .bind(Reminder::getTitle, Reminder::setTitle);
         binder.forField(description).bind(Reminder::getDescription, Reminder::setDescription);
         binder.forField(startTime)
-                .asRequired("Start time is required")
+                .asRequired(messageService.get(getUserLocale(), "validation.startTimeRequired"))
                 .bind(reminder -> convertFromUtc(reminder.getStartTime()),
                         (reminder, value) -> reminder.setStartTime(convertToUtc(value)));
         binder.forField(recurrence)
-                .asRequired("Recurrence is required")
+                .asRequired(messageService.get(getUserLocale(), "validation.recurrenceRequired"))
                 .bind(Reminder::getRecurrence, Reminder::setRecurrence);
         binder.forField(activeToggle)
                 .bind(Reminder::isActive, Reminder::setActive);
@@ -200,7 +217,7 @@ public class MainView extends VerticalLayout {
 
     private void editReminder(Reminder reminder) {
         setCurrentReminder(reminder);
-        openReminderDialog("Редактировать напоминание");
+        openReminderDialog(messageService.get(getUserLocale(), "dialog.editReminder"));
     }
 
     private void setCurrentReminder(Reminder reminder) {
@@ -212,7 +229,7 @@ public class MainView extends VerticalLayout {
     private void startNewReminder() {
         clearSelectedCard();
         setCurrentReminder(new Reminder());
-        openReminderDialog("Новое напоминание");
+        openReminderDialog(messageService.get(getUserLocale(), "dialog.newReminder"));
     }
 
     private void refreshReminders() {
@@ -221,9 +238,10 @@ public class MainView extends VerticalLayout {
         List<Reminder> reminders = reminderService.findAll();
 
         if (reminders.isEmpty()) {
-            Paragraph emptyState = new Paragraph("Напоминаний пока нет");
+            Paragraph emptyState = new Paragraph(messageService.get(getUserLocale(), "emptyState.reminders"));
             emptyState.getStyle().set("color", "var(--lumo-contrast-50pct)");
-            Button createFirst = new Button("Создать напоминание", event -> startNewReminder());
+            Button createFirst = new Button(messageService.get(getUserLocale(), "button.createReminder"),
+                    event -> startNewReminder());
             createFirst.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
             FlexLayout emptyLayout = new FlexLayout(emptyState, createFirst);
             emptyLayout.setFlexDirection(FlexLayout.FlexDirection.COLUMN);
@@ -254,7 +272,9 @@ public class MainView extends VerticalLayout {
         title.getStyle().set("font-weight", "600");
         title.getStyle().set("font-size", "var(--lumo-font-size-l)");
 
-        Span activePill = new Span(reminder.isActive() ? "Активно" : "Выключено");
+        Span activePill = new Span(reminder.isActive()
+                ? messageService.get(getUserLocale(), "status.active")
+                : messageService.get(getUserLocale(), "status.inactive"));
         activePill.getStyle().set("padding", "0 var(--lumo-space-s)");
         activePill.getStyle().set("border-radius", "999px");
         activePill.getStyle().set("font-size", "var(--lumo-font-size-s)");
@@ -267,7 +287,8 @@ public class MainView extends VerticalLayout {
         Checkbox quickToggle = new Checkbox();
         quickToggle.setValue(reminder.isActive());
         quickToggle.getElement().getThemeList().addAll(List.of("toggle", "small"));
-        quickToggle.getElement().setProperty("aria-label", "Включить напоминание");
+        quickToggle.getElement().setProperty("aria-label",
+                messageService.get(getUserLocale(), "aria.quickToggle"));
         quickToggle.getElement().executeJs("this.addEventListener('click', e => e.stopPropagation())");
         quickToggle.addValueChangeListener(event -> {
             reminder.setActive(event.getValue());
@@ -285,17 +306,22 @@ public class MainView extends VerticalLayout {
         header.setAlignItems(Alignment.CENTER);
         header.setJustifyContentMode(JustifyContentMode.BETWEEN);
 
-        Span nextRun = new Span("⏰ " + formatDateTime(reminder.getStartTime()));
+        Span nextRun = new Span(messageService.get(getUserLocale(), "label.nextRun",
+                formatDateTime(reminder.getStartTime())));
         nextRun.getStyle().set("color", "var(--lumo-secondary-text-color)");
 
-        Span recurrence = new Span("🔁 " + reminder.getRecurrence().name());
+        Span recurrence = new Span(messageService.get(getUserLocale(), "label.recurrence",
+                messageService.get(getUserLocale(), "recurrence." + reminder.getRecurrence().name().toLowerCase(Locale.ROOT))));
         recurrence.getStyle().set("color", "var(--lumo-secondary-text-color)");
 
-        Span status = new Span("Статус: " + (reminder.isActive() ? "Активно" : "Выключено"));
+        Span status = new Span(messageService.get(getUserLocale(), "label.status",
+                reminder.isActive()
+                        ? messageService.get(getUserLocale(), "status.active")
+                        : messageService.get(getUserLocale(), "status.inactive")));
         status.getStyle().set("color", "var(--lumo-secondary-text-color)");
 
         Paragraph description = new Paragraph(reminder.getDescription() == null || reminder.getDescription().isBlank()
-                ? "Без описания"
+                ? messageService.get(getUserLocale(), "label.noDescription")
                 : reminder.getDescription());
         description.getStyle().set("margin", "var(--lumo-space-xs) 0");
         description.getStyle().set("color", "var(--lumo-secondary-text-color)");
@@ -308,13 +334,16 @@ public class MainView extends VerticalLayout {
         meta.getStyle().set("gap", "var(--lumo-space-m)");
         meta.getStyle().set("margin-top", "var(--lumo-space-xs)");
 
-        Span lastSent = new Span("Последняя отправка: " + formatDateTimeOrDash(reminder.getLastSentAt()));
+        Span lastSent = new Span(messageService.get(getUserLocale(), "label.lastSent",
+                formatDateTimeOrDash(reminder.getLastSentAt())));
         lastSent.getStyle().set("color", "var(--lumo-secondary-text-color)");
 
-        Span nextAttempt = new Span("Следующая попытка: " + formatDateTimeOrDash(reminder.getNextAttemptAt()));
+        Span nextAttempt = new Span(messageService.get(getUserLocale(), "label.nextAttempt",
+                formatDateTimeOrDash(reminder.getNextAttemptAt())));
         nextAttempt.getStyle().set("color", "var(--lumo-secondary-text-color)");
 
-        Span retries = new Span("Повторов: " + reminder.getSendAttempts());
+        Span retries = new Span(messageService.get(getUserLocale(), "label.retries",
+                reminder.getSendAttempts()));
         retries.getStyle().set("color",
                 reminder.getSendAttempts() > 0 ? "var(--lumo-error-text-color)" : "var(--lumo-secondary-text-color)");
         retries.getStyle().set("font-weight", reminder.getSendAttempts() > 0 ? "600" : "400");
@@ -352,17 +381,20 @@ public class MainView extends VerticalLayout {
         if (binder.writeBeanIfValid(currentReminder)) {
             var chatId = userSettingsService.getChatId().orElse(null);
             if (chatId == null || chatId.isBlank()) {
-                Notification.show("Chat ID пока не получен из Telegram", 3000, Notification.Position.BOTTOM_CENTER)
+                Notification.show(messageService.get(getUserLocale(), "notification.chatIdMissing"),
+                        3000, Notification.Position.BOTTOM_CENTER)
                         .addThemeVariants(NotificationVariant.LUMO_ERROR);
                 return;
             }
             currentReminder.setChatId(chatId);
             reminderService.save(currentReminder);
-            Notification.show("Напоминание сохранено", 2000, Notification.Position.BOTTOM_CENTER);
+            Notification.show(messageService.get(getUserLocale(), "notification.reminderSaved"),
+                    2000, Notification.Position.BOTTOM_CENTER);
             refreshReminders();
             reminderDialog.close();
         } else {
-            Notification.show("Проверьте обязательные поля", 2000, Notification.Position.BOTTOM_CENTER);
+            Notification.show(messageService.get(getUserLocale(), "notification.validationError"),
+                    2000, Notification.Position.BOTTOM_CENTER);
         }
     }
 
@@ -374,17 +406,18 @@ public class MainView extends VerticalLayout {
     }
 
     private Dialog buildDeleteDialog() {
-        deleteDialog.setHeaderTitle("Удалить напоминание?");
-        Paragraph message = new Paragraph("Это действие нельзя отменить.");
-        Button confirm = new Button("Удалить", event -> {
+        deleteDialog.setHeaderTitle(messageService.get(getUserLocale(), "dialog.deleteTitle"));
+        Paragraph message = new Paragraph(messageService.get(getUserLocale(), "dialog.deleteMessage"));
+        Button confirm = new Button(messageService.get(getUserLocale(), "button.delete"), event -> {
             reminderService.delete(currentReminder.getId());
-            Notification.show("Напоминание удалено", 2000, Notification.Position.BOTTOM_CENTER);
+            Notification.show(messageService.get(getUserLocale(), "notification.reminderDeleted"),
+                    2000, Notification.Position.BOTTOM_CENTER);
             refreshReminders();
             reminderDialog.close();
             deleteDialog.close();
         });
         confirm.addThemeVariants(ButtonVariant.LUMO_ERROR, ButtonVariant.LUMO_PRIMARY);
-        Button cancel = new Button("Отмена", event -> deleteDialog.close());
+        Button cancel = new Button(messageService.get(getUserLocale(), "button.cancel"), event -> deleteDialog.close());
         deleteDialog.add(message);
         deleteDialog.getFooter().add(cancel, confirm);
         return deleteDialog;
@@ -400,10 +433,12 @@ public class MainView extends VerticalLayout {
                 .ifPresentOrElse(chatId -> {
                     log.info("Telegram init data validated, updating chatId to {}", chatId);
                     userSettingsService.updateChatId(String.valueOf(chatId));
-                    Notification.show("Chat ID получен из Telegram", 2000, Notification.Position.BOTTOM_CENTER);
+                    Notification.show(messageService.get(getUserLocale(), "notification.chatIdReceived"),
+                            2000, Notification.Position.BOTTOM_CENTER);
                 }, () -> {
                     log.warn("Telegram init data failed validation");
-                    Notification.show("Не удалось подтвердить Telegram данные", 3000, Notification.Position.BOTTOM_CENTER)
+                    Notification.show(messageService.get(getUserLocale(), "notification.telegramDataInvalid"),
+                            3000, Notification.Position.BOTTOM_CENTER)
                             .addThemeVariants(NotificationVariant.LUMO_ERROR);
                 });
     }
@@ -426,8 +461,23 @@ public class MainView extends VerticalLayout {
 
     private void updateDateTimeUiSettings() {
         ZoneId zoneId = getUserZoneId();
-        startTime.setHelperText("Выберите время в %s".formatted(zoneId.getId()));
+        startTime.setHelperText(messageService.get(getUserLocale(), "helper.startTime", zoneId.getId()));
         startTime.setLocale(getUserLocale());
+    }
+
+    private void updateLabels() {
+        Locale locale = getUserLocale();
+        headerTitle.setText(messageService.get(locale, "app.title"));
+        remindersTitle.setText(messageService.get(locale, "section.reminders"));
+        title.setLabel(messageService.get(locale, "label.title"));
+        description.setLabel(messageService.get(locale, "label.description"));
+        startTime.setLabel(messageService.get(locale, "label.startTime"));
+        recurrence.setLabel(messageService.get(locale, "label.recurrenceLabel"));
+        activeToggle.setLabel(messageService.get(locale, "label.active"));
+        save.setText(messageService.get(locale, "button.save"));
+        delete.setText(messageService.get(locale, "button.delete"));
+        reset.setText(messageService.get(locale, "button.reset"));
+        newReminderButton.setText(messageService.get(locale, "button.newReminder"));
     }
 
     private String formatDateTime(LocalDateTime dateTime) {

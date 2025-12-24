@@ -1,9 +1,11 @@
 package com.tma.reminders.ui;
 
+import com.tma.reminders.i18n.MessageService;
 import com.tma.reminders.telegram.TelegramBotService;
 import com.tma.reminders.telegram.TelegramInitDataService;
 import com.tma.reminders.user.UserSettings;
 import com.tma.reminders.user.UserSettingsService;
+import com.vaadin.flow.component.AttachEvent;
 import com.vaadin.flow.component.ClientCallable;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -37,7 +39,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 @Route("settings")
-@PageTitle("Настройки")
+@PageTitle("Settings")
 @PermitAll
 public class SettingsView extends VerticalLayout {
 
@@ -46,20 +48,25 @@ public class SettingsView extends VerticalLayout {
     private final TelegramBotService telegramBotService;
     private final TelegramInitDataService telegramInitDataService;
     private final UserSettingsService userSettingsService;
-    private final TextField chatIdField = new TextField("Telegram chat ID (получен из Telegram)");
-    private final ComboBox<ZoneId> timeZoneField = new ComboBox<>("Часовой пояс");
-    private final IntegerField maxRetryCountField = new IntegerField("Макс. повторов");
-    private final TimePicker quietHoursStartField = new TimePicker("Тихие часы: начало");
-    private final TimePicker quietHoursEndField = new TimePicker("Тихие часы: конец");
-    private final ComboBox<Locale> localeField = new ComboBox<>("Язык");
+    private final MessageService messageService;
+    private final TextField chatIdField = new TextField();
+    private final ComboBox<ZoneId> timeZoneField = new ComboBox<>();
+    private final IntegerField maxRetryCountField = new IntegerField();
+    private final TimePicker quietHoursStartField = new TimePicker();
+    private final TimePicker quietHoursEndField = new TimePicker();
+    private final ComboBox<Locale> localeField = new ComboBox<>();
+    private final Button backButton = new Button(new Icon(VaadinIcon.ARROW_LEFT));
+    private final Button testMessageButton = new Button();
     private UserSettings currentSettings;
     private boolean applyingSettings;
+    private H2 headerTitle;
 
     public SettingsView(TelegramBotService telegramBotService, TelegramInitDataService telegramInitDataService,
-                        UserSettingsService userSettingsService) {
+                        UserSettingsService userSettingsService, MessageService messageService) {
         this.telegramBotService = telegramBotService;
         this.telegramInitDataService = telegramInitDataService;
         this.userSettingsService = userSettingsService;
+        this.messageService = messageService;
         setSizeFull();
         setPadding(true);
         setSpacing(true);
@@ -69,25 +76,32 @@ public class SettingsView extends VerticalLayout {
         requestChatIdFromTelegram();
     }
 
+    @Override
+    protected void onAttach(AttachEvent attachEvent) {
+        super.onAttach(attachEvent);
+        attachEvent.getUI().getPage().setTitle(messageService.get(getUserLocale(), "section.settings"));
+    }
+
     private HorizontalLayout buildHeader() {
-        Button backButton = new Button(new Icon(VaadinIcon.ARROW_LEFT),
-                event -> getUI().ifPresent(ui -> ui.navigate(MainView.class)));
+        backButton.addClickListener(event -> getUI().ifPresent(ui -> ui.navigate(MainView.class)));
         backButton.addThemeVariants(ButtonVariant.LUMO_TERTIARY);
-        backButton.getElement().setProperty("title", "Назад к напоминаниям");
+        backButton.getElement().setProperty("title", messageService.get(getUserLocale(), "button.back"));
 
-        H2 title = new H2("Настройки");
-        title.getStyle().set("margin", "0");
+        headerTitle = new H2();
+        headerTitle.getStyle().set("margin", "0");
 
-        HorizontalLayout header = new HorizontalLayout(backButton, title);
+        HorizontalLayout header = new HorizontalLayout(backButton, headerTitle);
         header.setWidthFull();
         header.setAlignItems(Alignment.CENTER);
         header.setJustifyContentMode(JustifyContentMode.START);
         header.getStyle().set("gap", "var(--lumo-space-s)");
+        headerTitle.setText(messageService.get(getUserLocale(), "section.settings"));
         return header;
     }
 
     private FlexLayout buildSettingsForm() {
-        chatIdField.setPlaceholder("Получаем из Telegram Mini App");
+        updateLabels();
+        chatIdField.setPlaceholder(messageService.get(getUserLocale(), "placeholder.chatId"));
         chatIdField.setReadOnly(true);
         chatIdField.setWidthFull();
         userSettingsService.getChatId().ifPresent(chatIdField::setValue);
@@ -154,13 +168,14 @@ public class SettingsView extends VerticalLayout {
             persistSettings();
         });
 
-        Button testMessage = new Button("Отправить тест", event -> sendTestMessage());
-        testMessage.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
-        testMessage.setMinWidth("150px");
-        testMessage.setWidthFull();
+        testMessageButton.setText(messageService.get(getUserLocale(), "button.testMessage"));
+        testMessageButton.addClickListener(event -> sendTestMessage());
+        testMessageButton.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
+        testMessageButton.setMinWidth("150px");
+        testMessageButton.setWidthFull();
 
         FlexLayout settingsLayout = new FlexLayout(chatIdField, timeZoneField, maxRetryCountField,
-                quietHoursStartField, quietHoursEndField, localeField, testMessage);
+                quietHoursStartField, quietHoursEndField, localeField, testMessageButton);
         settingsLayout.setFlexWrap(FlexWrap.WRAP);
         settingsLayout.setWidthFull();
         settingsLayout.setAlignItems(Alignment.END);
@@ -175,7 +190,8 @@ public class SettingsView extends VerticalLayout {
         currentSettings = userSettingsService.updateSettings(currentSettings);
         localeField.setItems(buildLocaleOptions(currentSettings));
         applySettingsToFields(currentSettings);
-        Notification.show("Настройки сохранены", 1500, Notification.Position.BOTTOM_CENTER);
+        Notification.show(messageService.get(getUserLocale(), "notification.settingsSaved"),
+                1500, Notification.Position.BOTTOM_CENTER);
     }
 
     private void applySettingsToFields(UserSettings settings) {
@@ -186,6 +202,7 @@ public class SettingsView extends VerticalLayout {
         quietHoursEndField.setValue(settings.getQuietHoursEnd());
         localeField.setValue(getUserLocale());
         applyingSettings = false;
+        updateLabels();
     }
 
     private List<Locale> buildLocaleOptions(UserSettings settings) {
@@ -224,7 +241,8 @@ public class SettingsView extends VerticalLayout {
     private void sendTestMessage() {
         String chatId = userSettingsService.getChatId().orElse(null);
         if (chatId == null || chatId.isBlank()) {
-            Notification.show("Chat ID пока не получен из Telegram", 3000, Notification.Position.BOTTOM_CENTER)
+            Notification.show(messageService.get(getUserLocale(), "notification.chatIdMissing"),
+                    3000, Notification.Position.BOTTOM_CENTER)
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
             return;
         }
@@ -232,15 +250,19 @@ public class SettingsView extends VerticalLayout {
         try {
             parsedId = Long.valueOf(chatId);
         } catch (NumberFormatException ex) {
-            Notification.show("Chat ID должен быть числом", 3000, Notification.Position.BOTTOM_CENTER)
+            Notification.show(messageService.get(getUserLocale(), "notification.chatIdInvalid"),
+                    3000, Notification.Position.BOTTOM_CENTER)
                     .addThemeVariants(NotificationVariant.LUMO_ERROR);
             return;
         }
-        var result = telegramBotService.sendMessage(parsedId, "Тестовое сообщение от TMA Reminders");
+        var result = telegramBotService.sendMessage(parsedId,
+                messageService.get(getUserLocale(), "telegram.testMessage"));
         if (result.isSuccess()) {
-            Notification.show("Тестовое сообщение отправлено", 2000, Notification.Position.BOTTOM_CENTER);
+            Notification.show(messageService.get(getUserLocale(), "notification.testSent"),
+                    2000, Notification.Position.BOTTOM_CENTER);
         } else {
-            Notification notification = Notification.show("Не удалось отправить: " + result.description(),
+            Notification notification = Notification.show(
+                    messageService.get(getUserLocale(), "notification.testFailed", result.description()),
                     4000, Notification.Position.BOTTOM_CENTER);
             notification.addThemeVariants(NotificationVariant.LUMO_ERROR);
         }
@@ -260,12 +282,30 @@ public class SettingsView extends VerticalLayout {
                     if (currentSettings != null) {
                         currentSettings.setChatId(String.valueOf(chatId));
                     }
-                    Notification.show("Chat ID получен из Telegram", 2000, Notification.Position.BOTTOM_CENTER);
+                    Notification.show(messageService.get(getUserLocale(), "notification.chatIdReceived"),
+                            2000, Notification.Position.BOTTOM_CENTER);
                 }, () -> {
                     log.warn("Telegram init data failed validation");
-                    Notification.show("Не удалось подтвердить Telegram данные", 3000, Notification.Position.BOTTOM_CENTER)
+                    Notification.show(messageService.get(getUserLocale(), "notification.telegramDataInvalid"),
+                            3000, Notification.Position.BOTTOM_CENTER)
                             .addThemeVariants(NotificationVariant.LUMO_ERROR);
                 });
+    }
+
+    private void updateLabels() {
+        Locale locale = getUserLocale();
+        if (headerTitle != null) {
+            headerTitle.setText(messageService.get(locale, "section.settings"));
+        }
+        backButton.getElement().setProperty("title", messageService.get(locale, "button.back"));
+        chatIdField.setLabel(messageService.get(locale, "label.chatId"));
+        chatIdField.setPlaceholder(messageService.get(locale, "placeholder.chatId"));
+        timeZoneField.setLabel(messageService.get(locale, "label.timeZone"));
+        maxRetryCountField.setLabel(messageService.get(locale, "label.maxRetries"));
+        quietHoursStartField.setLabel(messageService.get(locale, "label.quietHoursStart"));
+        quietHoursEndField.setLabel(messageService.get(locale, "label.quietHoursEnd"));
+        localeField.setLabel(messageService.get(locale, "label.locale"));
+        testMessageButton.setText(messageService.get(locale, "button.testMessage"));
     }
 
     private void requestChatIdFromTelegram() {
