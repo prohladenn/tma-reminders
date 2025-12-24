@@ -321,15 +321,29 @@ public class MainView extends VerticalLayout {
         title.getStyle().set("font-weight", "600");
         title.getStyle().set("font-size", "var(--lumo-font-size-l)");
 
+        Span activePill = new Span(reminder.isActive() ? "Активно" : "Выключено");
+        activePill.getStyle().set("padding", "0 var(--lumo-space-s)");
+        activePill.getStyle().set("border-radius", "999px");
+        activePill.getStyle().set("font-size", "var(--lumo-font-size-s)");
+        activePill.getStyle().set("font-weight", "600");
+        activePill.getStyle().set("background-color",
+                reminder.isActive() ? "var(--lumo-success-10pct)" : "var(--lumo-error-10pct)");
+        activePill.getStyle().set("color",
+                reminder.isActive() ? "var(--lumo-success-text-color)" : "var(--lumo-error-text-color)");
+
+        FlexLayout header = new FlexLayout(title, activePill);
+        header.setWidthFull();
+        header.setAlignItems(Alignment.CENTER);
+        header.setJustifyContentMode(JustifyContentMode.BETWEEN);
+
         Span nextRun = new Span("⏰ " + formatDateTime(reminder.getStartTime()));
         nextRun.getStyle().set("color", "var(--lumo-secondary-text-color)");
 
         Span recurrence = new Span("🔁 " + reminder.getRecurrence().name());
         recurrence.getStyle().set("color", "var(--lumo-secondary-text-color)");
 
-        Span active = new Span(reminder.isActive() ? "Активно" : "Выключено");
-        active.getStyle().set("color", reminder.isActive() ? "var(--lumo-success-text-color)" : "var(--lumo-error-text-color)");
-        active.getStyle().set("font-weight", "500");
+        Span status = new Span("Статус: " + (reminder.isActive() ? "Активно" : "Выключено"));
+        status.getStyle().set("color", "var(--lumo-secondary-text-color)");
 
         Paragraph description = new Paragraph(reminder.getDescription() == null || reminder.getDescription().isBlank()
                 ? "Без описания"
@@ -337,7 +351,7 @@ public class MainView extends VerticalLayout {
         description.getStyle().set("margin", "var(--lumo-space-xs) 0");
         description.getStyle().set("color", "var(--lumo-secondary-text-color)");
 
-        FlexLayout meta = new FlexLayout(nextRun, recurrence, active);
+        FlexLayout meta = new FlexLayout(nextRun, recurrence, status);
         meta.setFlexWrap(FlexWrap.WRAP);
         meta.setAlignItems(Alignment.CENTER);
         meta.setJustifyContentMode(JustifyContentMode.START);
@@ -345,7 +359,26 @@ public class MainView extends VerticalLayout {
         meta.getStyle().set("gap", "var(--lumo-space-m)");
         meta.getStyle().set("margin-top", "var(--lumo-space-xs)");
 
-        card.add(title, description, meta);
+        Span lastSent = new Span("Последняя отправка: " + formatDateTimeOrDash(reminder.getLastSentAt()));
+        lastSent.getStyle().set("color", "var(--lumo-secondary-text-color)");
+
+        Span nextAttempt = new Span("Следующая попытка: " + formatDateTimeOrDash(reminder.getNextAttemptAt()));
+        nextAttempt.getStyle().set("color", "var(--lumo-secondary-text-color)");
+
+        Span retries = new Span("Повторов: " + reminder.getSendAttempts());
+        retries.getStyle().set("color",
+                reminder.getSendAttempts() > 0 ? "var(--lumo-error-text-color)" : "var(--lumo-secondary-text-color)");
+        retries.getStyle().set("font-weight", reminder.getSendAttempts() > 0 ? "600" : "400");
+
+        FlexLayout statusRow = new FlexLayout(lastSent, nextAttempt, retries);
+        statusRow.setFlexWrap(FlexWrap.WRAP);
+        statusRow.setAlignItems(Alignment.CENTER);
+        statusRow.setJustifyContentMode(JustifyContentMode.START);
+        statusRow.setWidthFull();
+        statusRow.getStyle().set("gap", "var(--lumo-space-m)");
+        statusRow.getStyle().set("margin-top", "var(--lumo-space-xs)");
+
+        card.add(header, description, meta, statusRow);
         card.addClickListener(event -> selectReminder(reminder, card));
         return card;
     }
@@ -502,6 +535,11 @@ public class MainView extends VerticalLayout {
         }
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd MMM yyyy HH:mm z").withLocale(getUserLocale());
         return dateTime.atZone(ZoneOffset.UTC).withZoneSameInstant(getUserZoneId()).format(formatter);
+    }
+
+    private String formatDateTimeOrDash(LocalDateTime dateTime) {
+        String formatted = formatDateTime(dateTime);
+        return formatted == null || formatted.isBlank() ? "—" : formatted;
     }
 
     private Reminder ensureDefaults(Reminder reminder) {
