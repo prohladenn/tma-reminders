@@ -471,8 +471,12 @@ public class MainView extends VerticalLayout {
 
     private void updateLabels() {
         Locale locale = getUserLocale();
-        headerTitle.setText(messageService.get(locale, "app.title"));
-        remindersTitle.setText(messageService.get(locale, "section.reminders"));
+        if (headerTitle != null) {
+            headerTitle.setText(messageService.get(locale, "app.title"));
+        }
+        if (remindersTitle != null) {
+            remindersTitle.setText(messageService.get(locale, "section.reminders"));
+        }
         title.setLabel(messageService.get(locale, "label.title"));
         description.setLabel(messageService.get(locale, "label.description"));
         startTime.setLabel(messageService.get(locale, "label.startTime"));
