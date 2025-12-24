@@ -20,9 +20,8 @@ import java.util.List;
 public class ReminderService {
 
     private static final Logger log = LoggerFactory.getLogger(ReminderService.class);
-    private static final int MAX_RESENDS = 2;
-    private static final int MAX_DELIVERY_ATTEMPTS = MAX_RESENDS + 1;
     private static final Duration RESEND_INTERVAL = Duration.ofMinutes(2);
+    private static final int DEFAULT_MAX_RETRY_COUNT = 2;
 
     private final ReminderRepository repository;
     private final TelegramBotService telegramBotService;
@@ -63,6 +62,7 @@ public class ReminderService {
     public void dispatchDueReminders() {
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         List<Reminder> dueReminders = repository.findDueReminders(now);
+        int maxDeliveryAttempts = resolveMaxDeliveryAttempts();
         for (Reminder reminder : dueReminders) {
             initializeNextAttemptAt(reminder);
             int attemptNumber = reminder.getSendAttempts() + 1;
@@ -80,14 +80,14 @@ public class ReminderService {
                 continue;
             }
             if (result.isSuccess()) {
-                handleSuccessfulSend(reminder, now, result, previousMessageId, isRetry);
+                handleSuccessfulSend(reminder, now, result, previousMessageId, isRetry, maxDeliveryAttempts);
             } else if (result.isNotFound()) {
                 reminder.setActive(false);
                 reminder.setNextAttemptAt(null);
                 log.warn("Disabling reminder {} for chat {} because Telegram returned 404 ({}). Check that the bot is started and chat id is correct.",
                         reminder.getId(), reminder.getChatId(), result.description());
             } else {
-                handleFailedSend(reminder, now, result.description());
+                handleFailedSend(reminder, now, result.description(), maxDeliveryAttempts);
             }
         }
     }
@@ -106,7 +106,7 @@ public class ReminderService {
     }
 
     private void handleSuccessfulSend(Reminder reminder, LocalDateTime now, SendResult result,
-                                      Integer previousMessageId, boolean isRetry) {
+                                      Integer previousMessageId, boolean isRetry, int maxDeliveryAttempts) {
         reminder.setLastSentAt(now);
         reminder.setLastSentMessageId(result.messageId());
 
@@ -114,20 +114,20 @@ public class ReminderService {
             telegramBotService.deleteMessage(Long.valueOf(reminder.getChatId()), previousMessageId);
         }
 
-        if (hasUsedAllAttempts(reminder)) {
+        if (hasUsedAllAttempts(reminder, maxDeliveryAttempts)) {
             scheduleAfterFinalAttempt(reminder);
         } else {
             reminder.setNextAttemptAt(now.plus(RESEND_INTERVAL));
         }
     }
 
-    private void handleFailedSend(Reminder reminder, LocalDateTime now, String description) {
-        if (hasUsedAllAttempts(reminder)) {
+    private void handleFailedSend(Reminder reminder, LocalDateTime now, String description, int maxDeliveryAttempts) {
+        if (hasUsedAllAttempts(reminder, maxDeliveryAttempts)) {
             scheduleAfterFinalAttempt(reminder);
             log.warn("Reminder {} reached max attempts after failure ({}); moving forward.", reminder.getId(), description);
         } else {
             reminder.setNextAttemptAt(now.plus(RESEND_INTERVAL));
-            String descriptionWithRetryInfo = appendRetryInfo(description, reminder.getSendAttempts() + 1);
+            String descriptionWithRetryInfo = appendRetryInfo(description, reminder.getSendAttempts() + 1, maxDeliveryAttempts);
             log.warn("Reminder {} will retry after failure ({}). Next attempt at {} UTC.", reminder.getId(), descriptionWithRetryInfo, reminder.getNextAttemptAt());
         }
     }
@@ -156,13 +156,13 @@ public class ReminderService {
     public record CompletionResult(boolean completed, Integer messageId, String updatedText) {
     }
 
-    private String appendRetryInfo(String description, int retryNumber) {
+    private String appendRetryInfo(String description, int retryNumber, int maxDeliveryAttempts) {
         String baseDescription = description == null ? "null" : description;
-        return "%s (retry %d of %d)".formatted(baseDescription, retryNumber, MAX_DELIVERY_ATTEMPTS);
+        return "%s (retry %d of %d)".formatted(baseDescription, retryNumber, maxDeliveryAttempts);
     }
 
-    private boolean hasUsedAllAttempts(Reminder reminder) {
-        return reminder.getSendAttempts() >= MAX_DELIVERY_ATTEMPTS;
+    private boolean hasUsedAllAttempts(Reminder reminder, int maxDeliveryAttempts) {
+        return reminder.getSendAttempts() >= maxDeliveryAttempts;
     }
 
     private void scheduleAfterFinalAttempt(Reminder reminder) {
@@ -204,5 +204,11 @@ public class ReminderService {
             case MONTHLY -> baseTime.plusMonths(1);
             default -> baseTime;
         };
+    }
+
+    private int resolveMaxDeliveryAttempts() {
+        Integer maxRetryCount = userSettingsService.getSettings().getMaxRetryCount();
+        int retries = maxRetryCount == null ? DEFAULT_MAX_RETRY_COUNT : Math.max(0, maxRetryCount);
+        return retries + 1;
     }
 }

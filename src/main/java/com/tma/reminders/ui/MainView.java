@@ -5,6 +5,7 @@ import com.tma.reminders.reminder.Reminder;
 import com.tma.reminders.reminder.ReminderService;
 import com.tma.reminders.telegram.TelegramBotService;
 import com.tma.reminders.telegram.TelegramInitDataService;
+import com.tma.reminders.user.UserSettings;
 import com.tma.reminders.user.UserSettingsService;
 import com.vaadin.flow.component.ClientCallable;
 import com.vaadin.flow.component.button.Button;
@@ -25,7 +26,9 @@ import com.vaadin.flow.component.orderedlayout.FlexLayout;
 import com.vaadin.flow.component.orderedlayout.FlexLayout.FlexWrap;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextArea;
+import com.vaadin.flow.component.textfield.IntegerField;
 import com.vaadin.flow.component.textfield.TextField;
+import com.vaadin.flow.component.timepicker.TimePicker;
 import com.vaadin.flow.data.binder.Binder;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
@@ -33,6 +36,7 @@ import jakarta.annotation.security.PermitAll;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -40,7 +44,10 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Route("")
 @PageTitle("TMA Reminders")
@@ -58,6 +65,11 @@ public class MainView extends VerticalLayout {
     private Reminder currentReminder;
     private Div selectedCard;
     private final TextField chatIdField = new TextField("Telegram chat ID (получен из Telegram)");
+    private final ComboBox<ZoneId> timeZoneField = new ComboBox<>("Time zone");
+    private final IntegerField maxRetryCountField = new IntegerField("Max retries");
+    private final TimePicker quietHoursStartField = new TimePicker("Quiet hours start");
+    private final TimePicker quietHoursEndField = new TimePicker("Quiet hours end");
+    private final ComboBox<Locale> localeField = new ComboBox<>("Locale");
     private final TextField title = new TextField("Title");
     private final TextArea description = new TextArea("Description");
     private final DateTimePicker startTime = new DateTimePicker("Start time");
@@ -66,6 +78,8 @@ public class MainView extends VerticalLayout {
     private final Button save = new Button("Save", e -> saveReminder());
     private final Button delete = new Button("Delete", e -> deleteReminder());
     private final Button reset = new Button("Reset", e -> setCurrentReminder(new Reminder()));
+    private UserSettings currentSettings;
+    private boolean applyingSettings;
 
     public MainView(ReminderService reminderService, TelegramBotService telegramBotService,
                     TelegramInitDataService telegramInitDataService, UserSettingsService userSettingsService) {
@@ -89,12 +103,75 @@ public class MainView extends VerticalLayout {
         chatIdField.setWidthFull();
         userSettingsService.getChatId().ifPresent(chatIdField::setValue);
 
+        currentSettings = userSettingsService.getSettings();
+
+        timeZoneField.setItems(ZoneId.getAvailableZoneIds().stream()
+                .sorted()
+                .map(ZoneId::of)
+                .toList());
+        timeZoneField.setItemLabelGenerator(ZoneId::getId);
+        timeZoneField.setWidthFull();
+
+        maxRetryCountField.setMin(0);
+        maxRetryCountField.setStepButtonsVisible(true);
+        maxRetryCountField.setWidthFull();
+
+        quietHoursStartField.setStep(Duration.ofMinutes(15));
+        quietHoursEndField.setStep(Duration.ofMinutes(15));
+        quietHoursStartField.setWidthFull();
+        quietHoursEndField.setWidthFull();
+
+        localeField.setItems(buildLocaleOptions(currentSettings));
+        localeField.setItemLabelGenerator(locale -> locale.getDisplayName(locale));
+        localeField.setWidthFull();
+
+        applySettingsToFields(currentSettings);
+
+        timeZoneField.addValueChangeListener(event -> {
+            if (applyingSettings) {
+                return;
+            }
+            ZoneId zoneId = event.getValue();
+            currentSettings.setTimeZoneId(zoneId == null ? null : zoneId.getId());
+            persistSettings();
+        });
+        maxRetryCountField.addValueChangeListener(event -> {
+            if (applyingSettings) {
+                return;
+            }
+            currentSettings.setMaxRetryCount(event.getValue());
+            persistSettings();
+        });
+        quietHoursStartField.addValueChangeListener(event -> {
+            if (applyingSettings) {
+                return;
+            }
+            currentSettings.setQuietHoursStart(event.getValue());
+            persistSettings();
+        });
+        quietHoursEndField.addValueChangeListener(event -> {
+            if (applyingSettings) {
+                return;
+            }
+            currentSettings.setQuietHoursEnd(event.getValue());
+            persistSettings();
+        });
+        localeField.addValueChangeListener(event -> {
+            if (applyingSettings) {
+                return;
+            }
+            Locale locale = event.getValue();
+            currentSettings.setLocale(locale == null ? null : locale.toLanguageTag());
+            persistSettings();
+        });
+
         Button testMessage = new Button("Отправить тест", e -> sendTestMessage());
         testMessage.addThemeVariants(ButtonVariant.LUMO_CONTRAST);
         testMessage.setMinWidth("150px");
         testMessage.setWidthFull();
 
-        FlexLayout settingsLayout = new FlexLayout(chatIdField, testMessage);
+        FlexLayout settingsLayout = new FlexLayout(chatIdField, timeZoneField, maxRetryCountField,
+                quietHoursStartField, quietHoursEndField, localeField, testMessage);
         settingsLayout.setFlexWrap(FlexWrap.WRAP);
         settingsLayout.setWidthFull();
         settingsLayout.setAlignItems(Alignment.END);
@@ -124,8 +201,7 @@ public class MainView extends VerticalLayout {
         description.setWidthFull();
         startTime.setWidthFull();
         startTime.setStep(Duration.ofMinutes(5));
-        startTime.setHelperText("Выберите время в UTC");
-        startTime.setLocale(Locale.forLanguageTag("ru-RU"));
+        updateDateTimeUiSettings();
         recurrence.setWidthFull();
         recurrence.setItems(Arrays.asList(Recurrence.values()));
         recurrence.setItemLabelGenerator(Enum::name);
@@ -134,7 +210,8 @@ public class MainView extends VerticalLayout {
         binder.forField(description).bind(Reminder::getDescription, Reminder::setDescription);
         binder.forField(startTime)
                 .asRequired("Start time is required")
-                .bind(Reminder::getStartTime, Reminder::setStartTime);
+                .bind(reminder -> convertFromUtc(reminder.getStartTime()),
+                        (reminder, value) -> reminder.setStartTime(convertToUtc(value)));
         binder.forField(recurrence)
                 .asRequired("Recurrence is required")
                 .bind(Reminder::getRecurrence, Reminder::setRecurrence);
@@ -313,11 +390,14 @@ public class MainView extends VerticalLayout {
             log.debug("Telegram init data is empty");
             return;
         }
-        telegramInitDataService.validateAndExtractChatId(initData)
+                telegramInitDataService.validateAndExtractChatId(initData)
                 .ifPresentOrElse(chatId -> {
                     log.info("Telegram init data validated, updating chatId to {}", chatId);
                     chatIdField.setValue(String.valueOf(chatId));
                     userSettingsService.updateChatId(String.valueOf(chatId));
+                    if (currentSettings != null) {
+                        currentSettings.setChatId(String.valueOf(chatId));
+                    }
                     Notification.show("Chat ID получен из Telegram", 2000, Notification.Position.BOTTOM_CENTER);
                 }, () -> {
                     log.warn("Telegram init data failed validation");
@@ -342,11 +422,52 @@ public class MainView extends VerticalLayout {
         );
     }
 
+    private void persistSettings() {
+        currentSettings.setChatId(chatIdField.getValue());
+        currentSettings = userSettingsService.updateSettings(currentSettings);
+        localeField.setItems(buildLocaleOptions(currentSettings));
+        applySettingsToFields(currentSettings);
+        refreshReminders();
+    }
+
+    private void applySettingsToFields(UserSettings settings) {
+        applyingSettings = true;
+        timeZoneField.setValue(getUserZoneId());
+        maxRetryCountField.setValue(settings.getMaxRetryCount());
+        quietHoursStartField.setValue(settings.getQuietHoursStart());
+        quietHoursEndField.setValue(settings.getQuietHoursEnd());
+        localeField.setValue(getUserLocale());
+        updateDateTimeUiSettings();
+        applyingSettings = false;
+    }
+
+    private List<Locale> buildLocaleOptions(UserSettings settings) {
+        Locale currentLocale = settings == null || settings.getLocale() == null || settings.getLocale().isBlank()
+                ? Locale.getDefault()
+                : Locale.forLanguageTag(settings.getLocale());
+        Set<Locale> locales = new java.util.LinkedHashSet<>();
+        locales.add(currentLocale);
+        locales.add(Locale.getDefault());
+        locales.add(Locale.ENGLISH);
+        locales.add(Locale.forLanguageTag("ru-RU"));
+        locales.add(Locale.forLanguageTag("en-US"));
+        return locales.stream()
+                .sorted(Comparator.comparing(Locale::toLanguageTag))
+                .collect(Collectors.toList());
+    }
+
+    private void updateDateTimeUiSettings() {
+        ZoneId zoneId = getUserZoneId();
+        startTime.setHelperText("Выберите время в %s".formatted(zoneId.getId()));
+        startTime.setLocale(getUserLocale());
+    }
+
     private String formatDateTime(LocalDateTime dateTime) {
         if (dateTime == null) {
             return "";
         }
-        return dateTime.atOffset(ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("dd MMM yyyy HH:mm 'UTC'"));
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd MMM yyyy HH:mm z").withLocale(getUserLocale());
+        return dateTime.atZone(ZoneOffset.UTC).withZoneSameInstant(getUserZoneId()).format(formatter);
     }
 
     private Reminder ensureDefaults(Reminder reminder) {
@@ -368,5 +489,37 @@ public class MainView extends VerticalLayout {
         save.setEnabled(true);
         activeToggle.setEnabled(true);
         startTime.setMin(null);
+    }
+
+    private ZoneId getUserZoneId() {
+        if (currentSettings == null || currentSettings.getTimeZoneId() == null || currentSettings.getTimeZoneId().isBlank()) {
+            return ZoneOffset.UTC;
+        }
+        try {
+            return ZoneId.of(currentSettings.getTimeZoneId());
+        } catch (DateTimeException ex) {
+            return ZoneOffset.UTC;
+        }
+    }
+
+    private Locale getUserLocale() {
+        if (currentSettings == null || currentSettings.getLocale() == null || currentSettings.getLocale().isBlank()) {
+            return Locale.getDefault();
+        }
+        return Locale.forLanguageTag(currentSettings.getLocale());
+    }
+
+    private LocalDateTime convertFromUtc(LocalDateTime utcDateTime) {
+        if (utcDateTime == null) {
+            return null;
+        }
+        return utcDateTime.atZone(ZoneOffset.UTC).withZoneSameInstant(getUserZoneId()).toLocalDateTime();
+    }
+
+    private LocalDateTime convertToUtc(LocalDateTime localDateTime) {
+        if (localDateTime == null) {
+            return null;
+        }
+        return localDateTime.atZone(getUserZoneId()).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
     }
 }
