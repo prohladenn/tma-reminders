@@ -39,7 +39,8 @@ class MainViewTest {
         when(userSettingsService.getSettings()).thenReturn(new UserSettings());
 
         MessageService messageService = mock(MessageService.class);
-        when(messageService.get(any(Locale.class), anyString(), any())).thenAnswer(invocation -> invocation.getArgument(1));
+        when(messageService.get(any(Locale.class), anyString(), any(Object[].class)))
+                .thenAnswer(invocation -> invocation.getArgument(1));
 
         MainView view = assertDoesNotThrow(() -> new MainView(
                 reminderService,
