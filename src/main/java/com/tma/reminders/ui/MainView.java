@@ -334,7 +334,7 @@ public class MainView extends VerticalLayout {
         Checkbox quickToggle = new Checkbox();
         quickToggle.setValue(reminder.isActive());
         quickToggle.getElement().getThemeList().addAll(List.of("toggle", "small"));
-        quickToggle.getElement().addEventListener("click", event -> event.stopPropagation());
+        quickToggle.getElement().executeJs("this.addEventListener('click', e => e.stopPropagation())");
         quickToggle.addValueChangeListener(event -> {
             reminder.setActive(event.getValue());
             reminderService.save(reminder);
