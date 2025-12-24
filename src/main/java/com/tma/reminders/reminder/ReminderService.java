@@ -2,6 +2,7 @@ package com.tma.reminders.reminder;
 
 import com.pengrad.telegrambot.model.request.InlineKeyboardButton;
 import com.pengrad.telegrambot.model.request.InlineKeyboardMarkup;
+import com.tma.reminders.i18n.MessageService;
 import com.tma.reminders.telegram.TelegramBotService;
 import com.tma.reminders.telegram.TelegramBotService.SendResult;
 import com.tma.reminders.user.UserSettingsService;
@@ -26,12 +27,14 @@ public class ReminderService {
     private final ReminderRepository repository;
     private final TelegramBotService telegramBotService;
     private final UserSettingsService userSettingsService;
+    private final MessageService messageService;
 
     public ReminderService(ReminderRepository repository, TelegramBotService telegramBotService,
-                           UserSettingsService userSettingsService) {
+                           UserSettingsService userSettingsService, MessageService messageService) {
         this.repository = repository;
         this.telegramBotService = telegramBotService;
         this.userSettingsService = userSettingsService;
+        this.messageService = messageService;
     }
 
     public Reminder save(Reminder reminder) {
@@ -149,7 +152,8 @@ public class ReminderService {
 
     private InlineKeyboardMarkup completedKeyboard(Reminder reminder) {
         return new InlineKeyboardMarkup(
-                new InlineKeyboardButton("\u2705 Completed").callbackData("complete:" + reminder.getId())
+                new InlineKeyboardButton(messageService.getForUser("keyboard.completed"))
+                        .callbackData("complete:" + reminder.getId())
         );
     }
 

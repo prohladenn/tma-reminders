@@ -3,6 +3,7 @@ package com.tma.reminders.telegram;
 import com.pengrad.telegrambot.model.CallbackQuery;
 import com.pengrad.telegrambot.model.Message;
 import com.pengrad.telegrambot.model.Update;
+import com.tma.reminders.i18n.MessageService;
 import com.tma.reminders.reminder.Reminder;
 import com.tma.reminders.reminder.ReminderService;
 import com.tma.reminders.reminder.Recurrence;
@@ -24,12 +25,15 @@ public class TelegramWebhookController {
 
     private final TelegramBotService telegramBotService;
     private final ReminderService reminderService;
+    private final MessageService messageService;
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private final DateTimeFormatter displayFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'");
 
-    public TelegramWebhookController(TelegramBotService telegramBotService, ReminderService reminderService) {
+    public TelegramWebhookController(TelegramBotService telegramBotService, ReminderService reminderService,
+                                     MessageService messageService) {
         this.telegramBotService = telegramBotService;
         this.reminderService = reminderService;
+        this.messageService = messageService;
     }
 
     @PostMapping
@@ -61,7 +65,9 @@ public class TelegramWebhookController {
         String text = message.text();
         if (text.startsWith("/list")) {
             List<Reminder> reminders = reminderService.findAllByChatId(chatId);
-            String response = reminders.isEmpty() ? "Нет активных напоминаний" : formatReminders(reminders);
+            String response = reminders.isEmpty()
+                    ? messageService.getForUser("telegram.list.empty")
+                    : formatReminders(reminders);
             telegramBotService.sendMessage(message.chat().id(), response);
         } else if (text.startsWith("/delete")) {
             String[] parts = text.split(" ");
@@ -69,9 +75,11 @@ public class TelegramWebhookController {
                 try {
                     Long id = Long.parseLong(parts[1]);
                     reminderService.delete(id);
-                    telegramBotService.sendMessage(message.chat().id(), "Напоминание удалено");
+                    telegramBotService.sendMessage(message.chat().id(),
+                            messageService.getForUser("telegram.delete.success"));
                 } catch (NumberFormatException ex) {
-                    telegramBotService.sendMessage(message.chat().id(), "Укажите корректный id: /delete 1");
+                    telegramBotService.sendMessage(message.chat().id(),
+                            messageService.getForUser("telegram.delete.invalid"));
                 }
             }
         } else {
@@ -96,22 +104,27 @@ public class TelegramWebhookController {
                     if (messageId != null) {
                         telegramBotService.editMessage(callbackQuery.message().chat().id(), messageId, completion.updatedText());
                     }
-                    telegramBotService.answerCallback(callbackQuery.id(), "Отмечено как выполнено");
+                    telegramBotService.answerCallback(callbackQuery.id(),
+                            messageService.getForUser("telegram.complete.success"));
                 } else {
-                    telegramBotService.answerCallback(callbackQuery.id(), "Напоминание не найдено");
+                    telegramBotService.answerCallback(callbackQuery.id(),
+                            messageService.getForUser("telegram.complete.notFound"));
                 }
             } catch (NumberFormatException ex) {
-                telegramBotService.answerCallback(callbackQuery.id(), "Некорректный идентификатор");
+                telegramBotService.answerCallback(callbackQuery.id(),
+                        messageService.getForUser("telegram.complete.invalid"));
             }
         } else {
-            telegramBotService.answerCallback(callbackQuery.id(), "Неизвестное действие");
+            telegramBotService.answerCallback(callbackQuery.id(),
+                    messageService.getForUser("telegram.unknownAction"));
         }
     }
 
     private void createReminderFromText(Message message, String chatId, String text) {
         String[] parts = text.split(";", 4);
         if (parts.length < 3) {
-            telegramBotService.sendMessage(message.chat().id(), "Используйте формат: Заголовок; yyyy-MM-dd HH:mm (UTC); DAILY|WEEKLY|MONTHLY|ONCE; Описание",
+            telegramBotService.sendMessage(message.chat().id(),
+                    messageService.getForUser("telegram.format.help"),
                     telegramBotService.numericTimeKeyboard());
             return;
         }
@@ -125,22 +138,24 @@ public class TelegramWebhookController {
                 reminder.setDescription(parts[3].trim());
             }
             reminderService.save(reminder);
-            telegramBotService.sendMessage(message.chat().id(), "Напоминание сохранено: " + reminder.getTitle());
+            telegramBotService.sendMessage(message.chat().id(),
+                    messageService.getForUser("telegram.reminder.saved", reminder.getTitle()));
         } catch (DateTimeParseException | IllegalArgumentException ex) {
-            telegramBotService.sendMessage(message.chat().id(), "Ошибка разбора. Проверьте дату (UTC) и тип повторения.",
+            telegramBotService.sendMessage(message.chat().id(),
+                    messageService.getForUser("telegram.reminder.parseError"),
                     telegramBotService.numericTimeKeyboard());
         }
     }
 
     private String formatReminders(List<Reminder> reminders) {
-        StringBuilder sb = new StringBuilder("Ваши напоминания:\n");
+        StringBuilder sb = new StringBuilder(messageService.getForUser("telegram.list.header")).append("\n");
         for (Reminder reminder : reminders) {
-            sb.append(reminder.getId())
-                    .append(": ")
-                    .append(reminder.getTitle())
-                    .append(" => ")
-                    .append(reminder.getStartTime().format(displayFormatter))
-                    .append(" (" + reminder.getRecurrence() + ")\n");
+            sb.append(messageService.getForUser("telegram.list.item",
+                    reminder.getId(),
+                    reminder.getTitle(),
+                    reminder.getStartTime().format(displayFormatter),
+                    reminder.getRecurrence()))
+                    .append("\n");
         }
         return sb.toString();
     }
