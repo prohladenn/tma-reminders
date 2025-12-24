@@ -76,7 +76,7 @@ public class ReminderService {
             } catch (Exception ex) {
                 log.error("Failed to send reminder {} to chat {} because of an exception; scheduling retry.",
                         reminder.getId(), reminder.getChatId(), ex);
-                handleFailedSend(reminder, now, ex.getMessage());
+                handleFailedSend(reminder, now, ex.getMessage(), maxDeliveryAttempts);
                 continue;
             }
             if (result.isSuccess()) {
