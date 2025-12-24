@@ -72,10 +72,10 @@ public class MainView extends VerticalLayout {
     private final DateTimePicker startTime = new DateTimePicker();
     private final ComboBox<Recurrence> recurrence = new ComboBox<>();
     private final Checkbox activeToggle = new Checkbox();
-    private final Button save = new Button(e -> saveReminder());
-    private final Button delete = new Button(e -> openDeleteConfirm());
-    private final Button reset = new Button(e -> setCurrentReminder(new Reminder()));
-    private final Button newReminderButton = new Button(e -> startNewReminder());
+    private final Button save = new Button();
+    private final Button delete = new Button();
+    private final Button reset = new Button();
+    private final Button newReminderButton = new Button();
     private final Dialog reminderDialog = new Dialog();
     private final Dialog deleteDialog = new Dialog();
     private UserSettings currentSettings;
@@ -93,6 +93,10 @@ public class MainView extends VerticalLayout {
         setPadding(true);
         setSpacing(true);
         setAlignItems(Alignment.STRETCH);
+        save.addClickListener(event -> saveReminder());
+        delete.addClickListener(event -> openDeleteConfirm());
+        reset.addClickListener(event -> setCurrentReminder(new Reminder()));
+        newReminderButton.addClickListener(event -> startNewReminder());
 
         add(buildHeader(), buildRemindersSection(), buildReminderDialog(), buildDeleteDialog());
         refreshReminders();
