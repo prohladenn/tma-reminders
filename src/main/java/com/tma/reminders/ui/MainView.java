@@ -78,6 +78,9 @@ public class MainView extends VerticalLayout {
     private final Button newReminderButton = new Button();
     private final Dialog reminderDialog = new Dialog();
     private final Dialog deleteDialog = new Dialog();
+    private final Paragraph deleteDialogMessage = new Paragraph();
+    private final Button deleteConfirmButton = new Button();
+    private final Button deleteCancelButton = new Button();
     private UserSettings currentSettings;
     private H2 headerTitle;
     private H2 remindersTitle;
@@ -106,6 +109,7 @@ public class MainView extends VerticalLayout {
     @Override
     protected void onAttach(AttachEvent attachEvent) {
         super.onAttach(attachEvent);
+        refreshSettings();
         attachEvent.getUI().getPage().setTitle(messageService.get(getUserLocale(), "app.title"));
     }
 
@@ -411,8 +415,9 @@ public class MainView extends VerticalLayout {
 
     private Dialog buildDeleteDialog() {
         deleteDialog.setHeaderTitle(messageService.get(getUserLocale(), "dialog.deleteTitle"));
-        Paragraph message = new Paragraph(messageService.get(getUserLocale(), "dialog.deleteMessage"));
-        Button confirm = new Button(messageService.get(getUserLocale(), "button.delete"), event -> {
+        deleteDialogMessage.setText(messageService.get(getUserLocale(), "dialog.deleteMessage"));
+        deleteConfirmButton.setText(messageService.get(getUserLocale(), "button.delete"));
+        deleteConfirmButton.addClickListener(event -> {
             reminderService.delete(currentReminder.getId());
             Notification.show(messageService.get(getUserLocale(), "notification.reminderDeleted"),
                     2000, Notification.Position.BOTTOM_CENTER);
@@ -420,10 +425,11 @@ public class MainView extends VerticalLayout {
             reminderDialog.close();
             deleteDialog.close();
         });
-        confirm.addThemeVariants(ButtonVariant.LUMO_ERROR, ButtonVariant.LUMO_PRIMARY);
-        Button cancel = new Button(messageService.get(getUserLocale(), "button.cancel"), event -> deleteDialog.close());
-        deleteDialog.add(message);
-        deleteDialog.getFooter().add(cancel, confirm);
+        deleteConfirmButton.addThemeVariants(ButtonVariant.LUMO_ERROR, ButtonVariant.LUMO_PRIMARY);
+        deleteCancelButton.setText(messageService.get(getUserLocale(), "button.cancel"));
+        deleteCancelButton.addClickListener(event -> deleteDialog.close());
+        deleteDialog.add(deleteDialogMessage);
+        deleteDialog.getFooter().add(deleteCancelButton, deleteConfirmButton);
         return deleteDialog;
     }
 
@@ -486,6 +492,22 @@ public class MainView extends VerticalLayout {
         delete.setText(messageService.get(locale, "button.delete"));
         reset.setText(messageService.get(locale, "button.reset"));
         newReminderButton.setText(messageService.get(locale, "button.newReminder"));
+    }
+
+    private void refreshSettings() {
+        currentSettings = userSettingsService.getSettings();
+        updateLabels();
+        updateDateTimeUiSettings();
+        refreshReminders();
+        updateDialogLabels();
+    }
+
+    private void updateDialogLabels() {
+        reminderDialog.setHeaderTitle(messageService.get(getUserLocale(), "dialog.newReminder"));
+        deleteDialog.setHeaderTitle(messageService.get(getUserLocale(), "dialog.deleteTitle"));
+        deleteDialogMessage.setText(messageService.get(getUserLocale(), "dialog.deleteMessage"));
+        deleteConfirmButton.setText(messageService.get(getUserLocale(), "button.delete"));
+        deleteCancelButton.setText(messageService.get(getUserLocale(), "button.cancel"));
     }
 
     private String formatDateTime(LocalDateTime dateTime) {
