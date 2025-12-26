@@ -47,4 +47,22 @@ class DatabaseConfigTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("hostname");
     }
+
+    @Test
+    void shouldFallbackToDefaultWhenDatabaseUrlIsNotPostgres() {
+        DataSourceProperties properties = new DataSourceProperties();
+        properties.setUrl("jdbc:h2:mem:testdb");
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty("DATABASE_URL", "jdbc:h2:mem:override");
+
+        DataSource dataSource = config.dataSource(properties, environment);
+        assertThat(dataSource).isInstanceOf(HikariDataSource.class);
+
+        HikariDataSource hikari = (HikariDataSource) dataSource;
+        try {
+            assertThat(hikari.getJdbcUrl()).isEqualTo("jdbc:h2:mem:testdb");
+        } finally {
+            hikari.close();
+        }
+    }
 }

@@ -12,6 +12,7 @@ import javax.sql.DataSource;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.Optional;
 
 @Configuration
@@ -24,6 +25,10 @@ public class DatabaseConfig {
     public DataSource dataSource(DataSourceProperties properties, Environment environment) {
         String rawUrl = environment.getProperty("DATABASE_URL");
         if (rawUrl == null || rawUrl.isBlank()) {
+            return properties.initializeDataSourceBuilder().build();
+        }
+        if (!isPostgresUrl(rawUrl)) {
+            log.warn("Ignoring DATABASE_URL because it is not a PostgreSQL URL: {}", rawUrl);
             return properties.initializeDataSourceBuilder().build();
         }
 
@@ -44,6 +49,13 @@ public class DatabaseConfig {
                 .username(username)
                 .password(password)
                 .build();
+    }
+
+    private boolean isPostgresUrl(String rawUrl) {
+        String normalized = rawUrl.trim().toLowerCase(Locale.ROOT);
+        return normalized.startsWith("postgres://")
+                || normalized.startsWith("postgresql://")
+                || normalized.startsWith("jdbc:postgresql://");
     }
 
     private URI parseDatabaseUri(String rawUrl) {
