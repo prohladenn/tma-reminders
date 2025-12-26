@@ -83,7 +83,7 @@ public class ReminderService {
                 continue;
             }
             if (result.isSuccess()) {
-                handleSuccessfulSend(reminder, now, result, previousMessageId, isRetry, maxDeliveryAttempts);
+                handleSuccessfulSend(reminder, now, result, previousMessageId, isRetry);
             } else if (result.isNotFound()) {
                 reminder.setActive(false);
                 reminder.setNextAttemptAt(null);
@@ -109,7 +109,7 @@ public class ReminderService {
     }
 
     private void handleSuccessfulSend(Reminder reminder, LocalDateTime now, SendResult result,
-                                      Integer previousMessageId, boolean isRetry, int maxDeliveryAttempts) {
+                                      Integer previousMessageId, boolean isRetry) {
         reminder.setLastSentAt(now);
         reminder.setLastSentMessageId(result.messageId());
 
@@ -117,11 +117,7 @@ public class ReminderService {
             telegramBotService.deleteMessage(Long.valueOf(reminder.getChatId()), previousMessageId);
         }
 
-        if (hasUsedAllAttempts(reminder, maxDeliveryAttempts)) {
-            scheduleAfterFinalAttempt(reminder);
-        } else {
-            reminder.setNextAttemptAt(now.plus(RESEND_INTERVAL));
-        }
+        scheduleAfterFinalAttempt(reminder);
     }
 
     private void handleFailedSend(Reminder reminder, LocalDateTime now, String description, int maxDeliveryAttempts) {
