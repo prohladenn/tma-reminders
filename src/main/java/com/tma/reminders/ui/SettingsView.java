@@ -1,5 +1,6 @@
 package com.tma.reminders.ui;
 
+import com.tma.reminders.feedback.FeedbackService;
 import com.tma.reminders.i18n.MessageService;
 import com.tma.reminders.telegram.TelegramBotService;
 import com.tma.reminders.telegram.TelegramInitDataService;
@@ -22,6 +23,7 @@ import com.vaadin.flow.component.orderedlayout.FlexLayout.FlexWrap;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.IntegerField;
+import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.component.timepicker.TimePicker;
 import com.vaadin.flow.router.PageTitle;
@@ -48,6 +50,7 @@ public class SettingsView extends VerticalLayout {
     private final TelegramBotService telegramBotService;
     private final TelegramInitDataService telegramInitDataService;
     private final UserSettingsService userSettingsService;
+    private final FeedbackService feedbackService;
     private final MessageService messageService;
     private final TextField chatIdField = new TextField();
     private final ComboBox<ZoneId> timeZoneField = new ComboBox<>();
@@ -57,15 +60,19 @@ public class SettingsView extends VerticalLayout {
     private final ComboBox<Locale> localeField = new ComboBox<>();
     private final Button backButton = new Button(new Icon(VaadinIcon.ARROW_LEFT));
     private final Button testMessageButton = new Button();
+    private final TextArea feedbackField = new TextArea();
+    private final Button sendFeedbackButton = new Button();
     private UserSettings currentSettings;
     private boolean applyingSettings;
     private H2 headerTitle;
+    private H2 feedbackTitle;
 
     public SettingsView(TelegramBotService telegramBotService, TelegramInitDataService telegramInitDataService,
-                        UserSettingsService userSettingsService, MessageService messageService) {
+                        UserSettingsService userSettingsService, FeedbackService feedbackService, MessageService messageService) {
         this.telegramBotService = telegramBotService;
         this.telegramInitDataService = telegramInitDataService;
         this.userSettingsService = userSettingsService;
+        this.feedbackService = feedbackService;
         this.messageService = messageService;
         setSizeFull();
         setPadding(true);
@@ -99,7 +106,7 @@ public class SettingsView extends VerticalLayout {
         return header;
     }
 
-    private FlexLayout buildSettingsForm() {
+    private VerticalLayout buildSettingsForm() {
         updateLabels();
         chatIdField.setPlaceholder(messageService.get(getUserLocale(), "placeholder.chatId"));
         chatIdField.setReadOnly(true);
@@ -182,7 +189,40 @@ public class SettingsView extends VerticalLayout {
         settingsLayout.setJustifyContentMode(JustifyContentMode.BETWEEN);
         settingsLayout.setFlexGrow(1, chatIdField);
         settingsLayout.getStyle().set("gap", "var(--lumo-space-s)");
-        return settingsLayout;
+
+        VerticalLayout container = new VerticalLayout(settingsLayout, buildFeedbackForm());
+        container.setPadding(false);
+        container.setSpacing(true);
+        container.setWidthFull();
+        return container;
+    }
+
+    private VerticalLayout buildFeedbackForm() {
+        feedbackTitle = new H2();
+        feedbackTitle.setText(messageService.get(getUserLocale(), "section.feedback"));
+        feedbackTitle.getStyle().set("margin", "var(--lumo-space-m) 0 0");
+
+        feedbackField.setWidthFull();
+        feedbackField.setMinHeight("140px");
+        feedbackField.setMaxLength(2000);
+        feedbackField.setClearButtonVisible(true);
+        feedbackField.setLabel(messageService.get(getUserLocale(), "label.feedback"));
+
+        sendFeedbackButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        sendFeedbackButton.setMinWidth("150px");
+        sendFeedbackButton.setText(messageService.get(getUserLocale(), "button.sendFeedback"));
+        sendFeedbackButton.addClickListener(event -> submitFeedback());
+
+        FlexLayout actions = new FlexLayout(sendFeedbackButton);
+        actions.setJustifyContentMode(JustifyContentMode.START);
+        actions.setWidthFull();
+
+        VerticalLayout feedbackLayout = new VerticalLayout(feedbackTitle, feedbackField, actions);
+        feedbackLayout.setPadding(false);
+        feedbackLayout.setSpacing(true);
+        feedbackLayout.setWidthFull();
+        feedbackLayout.getStyle().set("gap", "var(--lumo-space-s)");
+        return feedbackLayout;
     }
 
     private void persistSettings() {
@@ -268,6 +308,20 @@ public class SettingsView extends VerticalLayout {
         }
     }
 
+    private void submitFeedback() {
+        String feedback = feedbackField.getValue();
+        if (feedback == null || feedback.isBlank()) {
+            Notification.show(messageService.get(getUserLocale(), "notification.feedbackEmpty"),
+                    2500, Notification.Position.BOTTOM_CENTER)
+                    .addThemeVariants(NotificationVariant.LUMO_ERROR);
+            return;
+        }
+        feedbackService.saveFeedback(feedback.trim(), currentSettings, getUserLocale());
+        feedbackField.clear();
+        Notification.show(messageService.get(getUserLocale(), "notification.feedbackSent"),
+                2000, Notification.Position.BOTTOM_CENTER);
+    }
+
     @ClientCallable
     public void onTelegramInitData(String initData) {
         if (initData == null || initData.isBlank()) {
@@ -306,6 +360,11 @@ public class SettingsView extends VerticalLayout {
         quietHoursEndField.setLabel(messageService.get(locale, "label.quietHoursEnd"));
         localeField.setLabel(messageService.get(locale, "label.locale"));
         testMessageButton.setText(messageService.get(locale, "button.testMessage"));
+        if (feedbackTitle != null) {
+            feedbackTitle.setText(messageService.get(locale, "section.feedback"));
+        }
+        feedbackField.setLabel(messageService.get(locale, "label.feedback"));
+        sendFeedbackButton.setText(messageService.get(locale, "button.sendFeedback"));
     }
 
     private void requestChatIdFromTelegram() {
