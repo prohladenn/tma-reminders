@@ -31,6 +31,7 @@ import com.vaadin.flow.component.orderedlayout.FlexLayout;
 import com.vaadin.flow.component.orderedlayout.FlexLayout.FlexWrap;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.progressbar.ProgressBar;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.data.binder.Binder;
@@ -81,6 +82,9 @@ public class MainView extends VerticalLayout {
     private final Paragraph deleteDialogMessage = new Paragraph();
     private final Button deleteConfirmButton = new Button();
     private final Button deleteCancelButton = new Button();
+    private final Div loadingOverlay = new Div();
+    private final Paragraph loadingMessage = new Paragraph();
+    private final ProgressBar loadingBar = new ProgressBar();
     private UserSettings currentSettings;
     private H2 headerTitle;
     private H2 remindersTitle;
@@ -101,8 +105,9 @@ public class MainView extends VerticalLayout {
         reset.addClickListener(event -> setCurrentReminder(new Reminder()));
         newReminderButton.addClickListener(event -> startNewReminder());
 
-        add(buildHeader(), buildRemindersSection(), buildReminderDialog(), buildDeleteDialog());
+        add(buildHeader(), buildRemindersSection(), buildReminderDialog(), buildDeleteDialog(), buildLoadingOverlay());
         refreshReminders();
+        updateChatIdState();
         requestChatIdFromTelegram();
     }
 
@@ -433,27 +438,61 @@ public class MainView extends VerticalLayout {
         return deleteDialog;
     }
 
+    private Div buildLoadingOverlay() {
+        loadingOverlay.getStyle().set("position", "fixed");
+        loadingOverlay.getStyle().set("inset", "0");
+        loadingOverlay.getStyle().set("background", "var(--lumo-base-color)");
+        loadingOverlay.getStyle().set("display", "flex");
+        loadingOverlay.getStyle().set("flex-direction", "column");
+        loadingOverlay.getStyle().set("align-items", "center");
+        loadingOverlay.getStyle().set("justify-content", "center");
+        loadingOverlay.getStyle().set("gap", "var(--lumo-space-m)");
+        loadingOverlay.getStyle().set("z-index", "1000");
+
+        loadingBar.setIndeterminate(true);
+        loadingBar.setWidth("240px");
+        loadingMessage.getStyle().set("margin", "0");
+        loadingMessage.getStyle().set("color", "var(--lumo-secondary-text-color)");
+        loadingMessage.getStyle().set("text-align", "center");
+        loadingMessage.getStyle().set("max-width", "360px");
+
+        loadingOverlay.add(loadingBar, loadingMessage);
+        loadingOverlay.setVisible(false);
+        return loadingOverlay;
+    }
+
     @ClientCallable
     public void onTelegramInitData(String initData) {
         if (initData == null || initData.isBlank()) {
             log.debug("Telegram init data is empty");
             return;
         }
-                telegramInitDataService.validateAndExtractChatId(initData)
+        telegramInitDataService.validateAndExtractChatId(initData)
                 .ifPresentOrElse(chatId -> {
                     log.info("Telegram init data validated, updating chatId to {}", chatId);
                     userSettingsService.updateChatId(String.valueOf(chatId));
                     Notification.show(messageService.get(getUserLocale(), "notification.chatIdReceived"),
                             2000, Notification.Position.BOTTOM_CENTER);
+                    hideLoadingOverlay();
                 }, () -> {
                     log.warn("Telegram init data failed validation");
                     Notification.show(messageService.get(getUserLocale(), "notification.telegramDataInvalid"),
                             3000, Notification.Position.BOTTOM_CENTER)
                             .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                    showTelegramOpenMessage();
                 });
     }
 
+    @ClientCallable
+    public void onTelegramInitDataMissing() {
+        showTelegramOpenMessage();
+    }
+
     private void requestChatIdFromTelegram() {
+        if (userSettingsService.getChatId().isPresent()) {
+            hideLoadingOverlay();
+            return;
+        }
         getElement().executeJs(
                 """
                         const component = $0;
@@ -461,12 +500,34 @@ public class MainView extends VerticalLayout {
                         const params = new URLSearchParams(rawHash.startsWith('#') ? rawHash.substring(1) : rawHash);
                         const initData = params.get('tgWebAppData') ?? window.Telegram?.WebApp?.initData;
                         if (!initData) {
+                            component.$server.onTelegramInitDataMissing();
                             return;
                         }
                         component.$server.onTelegramInitData(initData);
                         """,
                 getElement()
         );
+    }
+
+    private void updateChatIdState() {
+        if (userSettingsService.getChatId().isPresent()) {
+            hideLoadingOverlay();
+        } else {
+            showLoadingMessage(messageService.get(getUserLocale(), "loading.chatId"));
+        }
+    }
+
+    private void showTelegramOpenMessage() {
+        showLoadingMessage(messageService.get(getUserLocale(), "loading.telegramOpen"));
+    }
+
+    private void showLoadingMessage(String message) {
+        loadingMessage.setText(message);
+        loadingOverlay.setVisible(true);
+    }
+
+    private void hideLoadingOverlay() {
+        loadingOverlay.setVisible(false);
     }
 
     private void updateDateTimeUiSettings() {
@@ -500,6 +561,7 @@ public class MainView extends VerticalLayout {
         updateDateTimeUiSettings();
         refreshReminders();
         updateDialogLabels();
+        updateChatIdState();
     }
 
     private void updateDialogLabels() {
