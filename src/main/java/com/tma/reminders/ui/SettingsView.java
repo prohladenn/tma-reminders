@@ -11,7 +11,9 @@ import com.vaadin.flow.component.ClientCallable;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
 import com.vaadin.flow.component.combobox.ComboBox;
+import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
+import com.vaadin.flow.component.html.Paragraph;
 import com.vaadin.flow.component.icon.Icon;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.notification.Notification;
@@ -22,6 +24,7 @@ import com.vaadin.flow.component.orderedlayout.FlexLayout;
 import com.vaadin.flow.component.orderedlayout.FlexLayout.FlexWrap;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.progressbar.ProgressBar;
 import com.vaadin.flow.component.textfield.IntegerField;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.textfield.TextField;
@@ -62,6 +65,9 @@ public class SettingsView extends VerticalLayout {
     private final Button testMessageButton = new Button();
     private final TextArea feedbackField = new TextArea();
     private final Button sendFeedbackButton = new Button();
+    private final Div loadingOverlay = new Div();
+    private final Paragraph loadingMessage = new Paragraph();
+    private final ProgressBar loadingBar = new ProgressBar();
     private UserSettings currentSettings;
     private boolean applyingSettings;
     private H2 headerTitle;
@@ -79,7 +85,8 @@ public class SettingsView extends VerticalLayout {
         setSpacing(true);
         setAlignItems(Alignment.STRETCH);
 
-        add(buildHeader(), buildSettingsForm());
+        add(buildHeader(), buildSettingsForm(), buildLoadingOverlay());
+        updateChatIdState();
         requestChatIdFromTelegram();
     }
 
@@ -225,6 +232,29 @@ public class SettingsView extends VerticalLayout {
         return feedbackLayout;
     }
 
+    private Div buildLoadingOverlay() {
+        loadingOverlay.getStyle().set("position", "fixed");
+        loadingOverlay.getStyle().set("inset", "0");
+        loadingOverlay.getStyle().set("background", "var(--lumo-base-color)");
+        loadingOverlay.getStyle().set("display", "flex");
+        loadingOverlay.getStyle().set("flex-direction", "column");
+        loadingOverlay.getStyle().set("align-items", "center");
+        loadingOverlay.getStyle().set("justify-content", "center");
+        loadingOverlay.getStyle().set("gap", "var(--lumo-space-m)");
+        loadingOverlay.getStyle().set("z-index", "1000");
+
+        loadingBar.setIndeterminate(true);
+        loadingBar.setWidth("240px");
+        loadingMessage.getStyle().set("margin", "0");
+        loadingMessage.getStyle().set("color", "var(--lumo-secondary-text-color)");
+        loadingMessage.getStyle().set("text-align", "center");
+        loadingMessage.getStyle().set("max-width", "360px");
+
+        loadingOverlay.add(loadingBar, loadingMessage);
+        loadingOverlay.setVisible(false);
+        return loadingOverlay;
+    }
+
     private void persistSettings() {
         currentSettings.setChatId(chatIdField.getValue());
         currentSettings = userSettingsService.updateSettings(currentSettings);
@@ -340,12 +370,19 @@ public class SettingsView extends VerticalLayout {
                     }
                     Notification.show(messageService.get(getUserLocale(), "notification.chatIdReceived"),
                             2000, Notification.Position.BOTTOM_CENTER);
+                    hideLoadingOverlay();
                 }, () -> {
                     log.warn("Telegram init data failed validation");
                     Notification.show(messageService.get(getUserLocale(), "notification.telegramDataInvalid"),
                             3000, Notification.Position.BOTTOM_CENTER)
                             .addThemeVariants(NotificationVariant.LUMO_ERROR);
+                    showTelegramOpenMessage();
                 });
+    }
+
+    @ClientCallable
+    public void onTelegramInitDataMissing() {
+        showTelegramOpenMessage();
     }
 
     private void updateLabels() {
@@ -370,6 +407,10 @@ public class SettingsView extends VerticalLayout {
     }
 
     private void requestChatIdFromTelegram() {
+        if (userSettingsService.getChatId().isPresent()) {
+            hideLoadingOverlay();
+            return;
+        }
         getElement().executeJs(
                 """
                         const component = $0;
@@ -377,12 +418,34 @@ public class SettingsView extends VerticalLayout {
                         const params = new URLSearchParams(rawHash.startsWith('#') ? rawHash.substring(1) : rawHash);
                         const initData = params.get('tgWebAppData') ?? window.Telegram?.WebApp?.initData;
                         if (!initData) {
+                            component.$server.onTelegramInitDataMissing();
                             return;
                         }
                         component.$server.onTelegramInitData(initData);
                         """,
                 getElement()
         );
+    }
+
+    private void updateChatIdState() {
+        if (userSettingsService.getChatId().isPresent()) {
+            hideLoadingOverlay();
+        } else {
+            showLoadingMessage(messageService.get(getUserLocale(), "loading.chatId"));
+        }
+    }
+
+    private void showTelegramOpenMessage() {
+        showLoadingMessage(messageService.get(getUserLocale(), "loading.telegramOpen"));
+    }
+
+    private void showLoadingMessage(String message) {
+        loadingMessage.setText(message);
+        loadingOverlay.setVisible(true);
+    }
+
+    private void hideLoadingOverlay() {
+        loadingOverlay.setVisible(false);
     }
 
     private void withApplyingSettings(Runnable action) {
