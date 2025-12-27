@@ -228,21 +228,23 @@ public class SettingsView extends VerticalLayout {
     private void persistSettings() {
         currentSettings.setChatId(chatIdField.getValue());
         currentSettings = userSettingsService.updateSettings(currentSettings);
-        localeField.setItems(buildLocaleOptions(currentSettings));
-        applySettingsToFields(currentSettings);
+        withApplyingSettings(() -> {
+            localeField.setItems(buildLocaleOptions(currentSettings));
+            applySettingsToFields(currentSettings);
+        });
         Notification.show(messageService.get(getUserLocale(), "notification.settingsSaved"),
                 1500, Notification.Position.BOTTOM_CENTER);
     }
 
     private void applySettingsToFields(UserSettings settings) {
-        applyingSettings = true;
-        timeZoneField.setValue(getUserZoneId());
-        maxRetryCountField.setValue(settings.getMaxRetryCount());
-        quietHoursStartField.setValue(settings.getQuietHoursStart());
-        quietHoursEndField.setValue(settings.getQuietHoursEnd());
-        localeField.setValue(getUserLocale());
-        applyingSettings = false;
-        updateLabels();
+        withApplyingSettings(() -> {
+            timeZoneField.setValue(getUserZoneId());
+            maxRetryCountField.setValue(settings.getMaxRetryCount());
+            quietHoursStartField.setValue(settings.getQuietHoursStart());
+            quietHoursEndField.setValue(settings.getQuietHoursEnd());
+            localeField.setValue(getUserLocale());
+            updateLabels();
+        });
     }
 
     private List<Locale> buildLocaleOptions(UserSettings settings) {
@@ -381,5 +383,14 @@ public class SettingsView extends VerticalLayout {
                         """,
                 getElement()
         );
+    }
+
+    private void withApplyingSettings(Runnable action) {
+        applyingSettings = true;
+        try {
+            action.run();
+        } finally {
+            applyingSettings = false;
+        }
     }
 }
