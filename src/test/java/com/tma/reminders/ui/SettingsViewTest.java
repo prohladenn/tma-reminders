@@ -16,9 +16,11 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Locale;
 import java.util.Optional;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -88,5 +90,33 @@ class SettingsViewTest {
         TextField chatIdField = (TextField) ReflectionTestUtils.getField(view, "chatIdField");
         Locale locale = Locale.forLanguageTag("ru-RU");
         assertEquals(messageService.get(locale, "placeholder.chatId"), chatIdField.getPlaceholder());
+    }
+
+    @Test
+    void localeOptionsIncludeEnglishAndRussian() {
+        UI.setCurrent(new UI());
+        TelegramBotService telegramBotService = mock(TelegramBotService.class);
+        TelegramInitDataService telegramInitDataService = mock(TelegramInitDataService.class);
+        UserSettingsService userSettingsService = mock(UserSettingsService.class);
+        FeedbackService feedbackService = mock(FeedbackService.class);
+        UserSettings settings = new UserSettings();
+        settings.setLocale("fr-FR");
+        when(userSettingsService.getSettings()).thenReturn(settings);
+        when(userSettingsService.getChatId()).thenReturn(Optional.empty());
+
+        MessageService messageService = new MessageService(userSettingsService);
+
+        SettingsView view = assertDoesNotThrow(() -> new SettingsView(
+                telegramBotService,
+                telegramInitDataService,
+                userSettingsService,
+                feedbackService,
+                messageService
+        ));
+
+        @SuppressWarnings("unchecked")
+        List<Locale> locales = (List<Locale>) ReflectionTestUtils.invokeMethod(view, "buildLocaleOptions", settings);
+        assertTrue(locales.contains(Locale.forLanguageTag("en-US")));
+        assertTrue(locales.contains(Locale.forLanguageTag("ru-RU")));
     }
 }
