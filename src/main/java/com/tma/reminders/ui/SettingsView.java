@@ -84,6 +84,7 @@ public class SettingsView extends VerticalLayout {
         setPadding(true);
         setSpacing(true);
         setAlignItems(Alignment.STRETCH);
+        applySafeAreaStyles();
 
         add(buildHeader(), buildSettingsForm(), buildLoadingOverlay());
         updateChatIdState();
@@ -94,6 +95,8 @@ public class SettingsView extends VerticalLayout {
     protected void onAttach(AttachEvent attachEvent) {
         super.onAttach(attachEvent);
         attachEvent.getUI().getPage().setTitle(messageService.get(getUserLocale(), "section.settings"));
+        configureTelegramViewport();
+        configureTelegramBackButton(true);
     }
 
     private HorizontalLayout buildHeader() {
@@ -385,6 +388,11 @@ public class SettingsView extends VerticalLayout {
         showTelegramOpenMessage();
     }
 
+    @ClientCallable
+    public void onTelegramBackButton() {
+        getUI().ifPresent(ui -> ui.navigate(MainView.class));
+    }
+
     private void updateLabels() {
         Locale locale = getUserLocale();
         if (headerTitle != null) {
@@ -455,5 +463,125 @@ public class SettingsView extends VerticalLayout {
         } finally {
             applyingSettings = false;
         }
+    }
+
+    private void configureTelegramBackButton(boolean visible) {
+        postTelegramEvent("web_app_setup_back_button",
+                visible ? "{\"is_visible\":true}" : "{\"is_visible\":false}");
+        getElement().executeJs(
+                """
+                        const component = $0;
+                        const visible = $1;
+                        const webApp = window.Telegram?.WebApp;
+                        if (!webApp?.BackButton) {
+                          return;
+                        }
+                        const backButton = webApp.BackButton;
+                        const existingHandler = component.__tmaBackHandler;
+                        if (existingHandler && backButton.offClick) {
+                          backButton.offClick(existingHandler);
+                        }
+                        if (!visible) {
+                          backButton.hide();
+                          return;
+                        }
+                        const handler = () => component.$server.onTelegramBackButton();
+                        component.__tmaBackHandler = handler;
+                        if (backButton.onClick) {
+                          backButton.onClick(handler);
+                        }
+                        backButton.show();
+                        """,
+                getElement(),
+                visible
+        );
+    }
+
+    private void configureTelegramViewport() {
+        postTelegramEvent("web_app_expand", null);
+        postTelegramEvent("web_app_request_viewport", null);
+        postTelegramEvent("web_app_request_safe_area", null);
+        postTelegramEvent("web_app_request_content_safe_area", null);
+        registerViewportEventHandlers();
+    }
+
+    private void applySafeAreaStyles() {
+        getElement().getStyle().set("padding-top", "calc(var(--lumo-space-m) + var(--tg-safe-area-top, 0px))");
+        getElement().getStyle().set("padding-bottom", "calc(var(--lumo-space-m) + var(--tg-safe-area-bottom, 0px))");
+        getElement().getStyle().set("padding-left", "calc(var(--lumo-space-m) + var(--tg-safe-area-left, 0px))");
+        getElement().getStyle().set("padding-right", "calc(var(--lumo-space-m) + var(--tg-safe-area-right, 0px))");
+        getElement().getStyle().set("min-height", "var(--tg-viewport-height, 100vh)");
+    }
+
+    private void registerViewportEventHandlers() {
+        getElement().executeJs(
+                """
+                        const component = $0;
+                        const applyInsets = (insets) => {
+                          const top = insets?.top ?? 0;
+                          const bottom = insets?.bottom ?? 0;
+                          const left = insets?.left ?? 0;
+                          const right = insets?.right ?? 0;
+                          component.style.setProperty('--tg-safe-area-top', `${top}px`);
+                          component.style.setProperty('--tg-safe-area-bottom', `${bottom}px`);
+                          component.style.setProperty('--tg-safe-area-left', `${left}px`);
+                          component.style.setProperty('--tg-safe-area-right', `${right}px`);
+                        };
+                        const applyViewport = (webApp) => {
+                          if (!webApp) {
+                            return;
+                          }
+                          if (webApp.viewportHeight) {
+                            component.style.setProperty('--tg-viewport-height', `${webApp.viewportHeight}px`);
+                          }
+                          if (webApp.viewportStableHeight) {
+                            component.style.setProperty('--tg-viewport-stable-height', `${webApp.viewportStableHeight}px`);
+                          }
+                        };
+                        const webApp = window.Telegram?.WebApp;
+                        if (!webApp?.onEvent) {
+                          return;
+                        }
+                        const safeArea = webApp.safeAreaInset || webApp.safeAreaInsets || webApp.safeArea || {};
+                        const contentSafeArea = webApp.contentSafeAreaInset || webApp.contentSafeArea || {};
+                        applyInsets(Object.keys(contentSafeArea).length ? contentSafeArea : safeArea);
+                        applyViewport(webApp);
+                        webApp.onEvent('safeAreaChanged', () => {
+                          const nextSafeArea = webApp.safeAreaInset || webApp.safeAreaInsets || webApp.safeArea || {};
+                          applyInsets(nextSafeArea);
+                        });
+                        webApp.onEvent('contentSafeAreaChanged', () => {
+                          const nextContentSafeArea = webApp.contentSafeAreaInset || webApp.contentSafeArea || {};
+                          const fallbackSafeArea = webApp.safeAreaInset || webApp.safeAreaInsets || webApp.safeArea || {};
+                          applyInsets(Object.keys(nextContentSafeArea).length ? nextContentSafeArea : fallbackSafeArea);
+                        });
+                        webApp.onEvent('viewportChanged', () => applyViewport(webApp));
+                        """,
+                getElement()
+        );
+    }
+
+    private void postTelegramEvent(String eventType, String eventDataJson) {
+        getElement().executeJs(
+                """
+                        const eventType = $0;
+                        const eventDataJson = $1;
+                        const eventData = eventDataJson ? JSON.parse(eventDataJson) : {};
+                        const payload = JSON.stringify({ eventType, eventData });
+                        if (window.TelegramWebviewProxy?.postEvent) {
+                          window.TelegramWebviewProxy.postEvent(eventType, JSON.stringify(eventData));
+                          return;
+                        }
+                        if (window.external?.notify) {
+                          window.external.notify(payload);
+                          return;
+                        }
+                        if (window.parent?.postMessage) {
+                          window.parent.postMessage(payload, 'https://web.telegram.org');
+                        }
+                        """,
+                eventType,
+                eventDataJson
+        );
     }
 }

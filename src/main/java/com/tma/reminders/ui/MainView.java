@@ -100,6 +100,7 @@ public class MainView extends VerticalLayout {
         setPadding(true);
         setSpacing(true);
         setAlignItems(Alignment.STRETCH);
+        applySafeAreaStyles();
         save.addClickListener(event -> saveReminder());
         delete.addClickListener(event -> openDeleteConfirm());
         reset.addClickListener(event -> setCurrentReminder(new Reminder()));
@@ -116,6 +117,9 @@ public class MainView extends VerticalLayout {
         super.onAttach(attachEvent);
         refreshSettings();
         attachEvent.getUI().getPage().setTitle(messageService.get(getUserLocale(), "app.title"));
+        configureTelegramViewport();
+        configureTelegramBackButton(false);
+        updateSwipeBehavior();
     }
 
     private HorizontalLayout buildHeader() {
@@ -165,6 +169,7 @@ public class MainView extends VerticalLayout {
         reminderDialog.setModal(true);
         reminderDialog.setDraggable(true);
         reminderDialog.setResizable(true);
+        reminderDialog.addOpenedChangeListener(event -> updateSwipeBehavior());
         reminderDialog.add(buildForm());
         reminderDialog.setWidth("720px");
         return reminderDialog;
@@ -422,6 +427,7 @@ public class MainView extends VerticalLayout {
         deleteDialog.setHeaderTitle(messageService.get(getUserLocale(), "dialog.deleteTitle"));
         deleteDialogMessage.setText(messageService.get(getUserLocale(), "dialog.deleteMessage"));
         deleteConfirmButton.setText(messageService.get(getUserLocale(), "button.delete"));
+        deleteDialog.addOpenedChangeListener(event -> updateSwipeBehavior());
         deleteConfirmButton.addClickListener(event -> {
             reminderService.delete(currentReminder.getId());
             Notification.show(messageService.get(getUserLocale(), "notification.reminderDeleted"),
@@ -650,5 +656,104 @@ public class MainView extends VerticalLayout {
             return null;
         }
         return localDateTime.atZone(getUserZoneId()).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
+    }
+
+    private void configureTelegramBackButton(boolean visible) {
+        postTelegramEvent("web_app_setup_back_button",
+                visible ? "{\"is_visible\":true}" : "{\"is_visible\":false}");
+    }
+
+    private void updateSwipeBehavior() {
+        boolean allowSwipe = !(reminderDialog.isOpened() || deleteDialog.isOpened());
+        postTelegramEvent("web_app_setup_swipe_behavior",
+                "{\"allow_vertical_swipe\":" + allowSwipe + "}");
+    }
+
+    private void configureTelegramViewport() {
+        postTelegramEvent("web_app_expand", null);
+        postTelegramEvent("web_app_request_viewport", null);
+        postTelegramEvent("web_app_request_safe_area", null);
+        postTelegramEvent("web_app_request_content_safe_area", null);
+        registerViewportEventHandlers();
+    }
+
+    private void applySafeAreaStyles() {
+        getElement().getStyle().set("padding-top", "calc(var(--lumo-space-m) + var(--tg-safe-area-top, 0px))");
+        getElement().getStyle().set("padding-bottom", "calc(var(--lumo-space-m) + var(--tg-safe-area-bottom, 0px))");
+        getElement().getStyle().set("padding-left", "calc(var(--lumo-space-m) + var(--tg-safe-area-left, 0px))");
+        getElement().getStyle().set("padding-right", "calc(var(--lumo-space-m) + var(--tg-safe-area-right, 0px))");
+        getElement().getStyle().set("min-height", "var(--tg-viewport-height, 100vh)");
+    }
+
+    private void registerViewportEventHandlers() {
+        getElement().executeJs(
+                """
+                        const component = $0;
+                        const applyInsets = (insets) => {
+                          const top = insets?.top ?? 0;
+                          const bottom = insets?.bottom ?? 0;
+                          const left = insets?.left ?? 0;
+                          const right = insets?.right ?? 0;
+                          component.style.setProperty('--tg-safe-area-top', `${top}px`);
+                          component.style.setProperty('--tg-safe-area-bottom', `${bottom}px`);
+                          component.style.setProperty('--tg-safe-area-left', `${left}px`);
+                          component.style.setProperty('--tg-safe-area-right', `${right}px`);
+                        };
+                        const applyViewport = (webApp) => {
+                          if (!webApp) {
+                            return;
+                          }
+                          if (webApp.viewportHeight) {
+                            component.style.setProperty('--tg-viewport-height', `${webApp.viewportHeight}px`);
+                          }
+                          if (webApp.viewportStableHeight) {
+                            component.style.setProperty('--tg-viewport-stable-height', `${webApp.viewportStableHeight}px`);
+                          }
+                        };
+                        const webApp = window.Telegram?.WebApp;
+                        if (!webApp?.onEvent) {
+                          return;
+                        }
+                        const safeArea = webApp.safeAreaInset || webApp.safeAreaInsets || webApp.safeArea || {};
+                        const contentSafeArea = webApp.contentSafeAreaInset || webApp.contentSafeArea || {};
+                        applyInsets(Object.keys(contentSafeArea).length ? contentSafeArea : safeArea);
+                        applyViewport(webApp);
+                        webApp.onEvent('safeAreaChanged', () => {
+                          const nextSafeArea = webApp.safeAreaInset || webApp.safeAreaInsets || webApp.safeArea || {};
+                          applyInsets(nextSafeArea);
+                        });
+                        webApp.onEvent('contentSafeAreaChanged', () => {
+                          const nextContentSafeArea = webApp.contentSafeAreaInset || webApp.contentSafeArea || {};
+                          const fallbackSafeArea = webApp.safeAreaInset || webApp.safeAreaInsets || webApp.safeArea || {};
+                          applyInsets(Object.keys(nextContentSafeArea).length ? nextContentSafeArea : fallbackSafeArea);
+                        });
+                        webApp.onEvent('viewportChanged', () => applyViewport(webApp));
+                        """,
+                getElement()
+        );
+    }
+
+    private void postTelegramEvent(String eventType, String eventDataJson) {
+        getElement().executeJs(
+                """
+                        const eventType = $0;
+                        const eventDataJson = $1;
+                        const eventData = eventDataJson ? JSON.parse(eventDataJson) : {};
+                        const payload = JSON.stringify({ eventType, eventData });
+                        if (window.TelegramWebviewProxy?.postEvent) {
+                          window.TelegramWebviewProxy.postEvent(eventType, JSON.stringify(eventData));
+                          return;
+                        }
+                        if (window.external?.notify) {
+                          window.external.notify(payload);
+                          return;
+                        }
+                        if (window.parent?.postMessage) {
+                          window.parent.postMessage(payload, 'https://web.telegram.org');
+                        }
+                        """,
+                eventType,
+                eventDataJson
+        );
     }
 }
