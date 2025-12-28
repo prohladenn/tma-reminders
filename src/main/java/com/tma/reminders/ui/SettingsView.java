@@ -467,7 +467,7 @@ public class SettingsView extends VerticalLayout {
 
     private void configureTelegramBackButton(boolean visible) {
         postTelegramEvent("web_app_setup_back_button",
-                visible ? "{\"is_visible\":true}" : "{\"is_visible\":false}");
+                TelegramWebAppSupport.backButtonEventData(visible));
         getElement().executeJs(
                 """
                         const component = $0;
@@ -506,11 +506,8 @@ public class SettingsView extends VerticalLayout {
     }
 
     private void applySafeAreaStyles() {
-        getElement().getStyle().set("padding-top", "calc(var(--lumo-space-m) + var(--tg-safe-area-top, 0px))");
-        getElement().getStyle().set("padding-bottom", "calc(var(--lumo-space-m) + var(--tg-safe-area-bottom, 0px))");
-        getElement().getStyle().set("padding-left", "calc(var(--lumo-space-m) + var(--tg-safe-area-left, 0px))");
-        getElement().getStyle().set("padding-right", "calc(var(--lumo-space-m) + var(--tg-safe-area-right, 0px))");
-        getElement().getStyle().set("min-height", "var(--tg-viewport-height, 100vh)");
+        TelegramWebAppSupport.safeAreaStyles()
+                .forEach((key, value) -> getElement().getStyle().set(key, value));
     }
 
     private void registerViewportEventHandlers() {
